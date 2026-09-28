@@ -1,0 +1,6785 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Mkutano Convening Portal API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: Auth
+    description: Browser and mobile authentication endpoints.
+  - name: convenings
+    description: Convening management
+  - name: partners
+    description: Partner CRM
+  - name: engagements
+    description: Partner engagement pipeline
+  - name: speakers
+    description: Speaker management
+  - name: speaker-engagements
+    description: Speaker engagement per convening
+  - name: consents
+    description: Media and publicity consent
+  - name: budgets
+    description: Budget tracking
+  - name: workstreams
+    description: Project workstreams
+  - name: tasks
+    description: Workstream tasks
+  - name: milestones
+    description: Roadmap milestones
+  - name: sessions
+    description: Agenda sessions
+  - name: analytics
+    description: Dashboard analytics
+  - name: service-providers
+    description: Global service provider directory
+  - name: provider-bookings
+    description: Per-convening provider bookings
+  - name: users
+    description: User management (admin)
+  - name: exhibitors
+    description: Exhibition exhibitor directory
+  - name: booths
+    description: Exhibition booth floor plan
+  - name: documents
+    description: Document library and outreach templates
+  - name: Storage
+    description: Object storage upload and serving endpoints.
+  - name: sponsorship-packages
+    description: Per-convening sponsorship package definitions
+  - name: pass-type-configs
+    description: Per-convening pass type configuration
+  - name: sheets
+    description: Google Sheets live sync (Admin only)
+  - name: pillars
+    description: Per-convening thematic pillars for partner assignment
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /audit:
+    get:
+      operationId: getAuditLog
+      tags: [Audit]
+      summary: List audit log entries (Admin only)
+      parameters:
+        - name: entityType
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [Create, Update, Delete, Restore, Export]
+        - name: actorUserId
+          in: query
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          schema:
+            type: string
+        - name: after
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: before
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 500
+      responses:
+        "200":
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+
+  /auth/user:
+    get:
+      tags: [Auth]
+      operationId: getCurrentAuthUser
+      summary: Get the currently authenticated user
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+        - $ref: '#/components/parameters/SessionCookie'
+      responses:
+        '200':
+          description: Auth status resolved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserEnvelope'
+
+  /login:
+    get:
+      tags: [Auth]
+      operationId: beginBrowserLogin
+      summary: Start the browser OIDC login flow
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to the OIDC authorization endpoint.
+
+  /callback:
+    get:
+      tags: [Auth]
+      operationId: handleBrowserLoginCallback
+      summary: Complete the browser OIDC login flow
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: iss
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uri
+      responses:
+        '302':
+          description: Redirect to the returnTo path on success or /api/login on failure.
+
+  /logout:
+    get:
+      tags: [Auth]
+      operationId: logoutBrowserSession
+      summary: Clear the session and begin OIDC logout
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+        - $ref: '#/components/parameters/SessionCookie'
+      responses:
+        '302':
+          description: Redirect to the OIDC provider logout URL.
+
+  /mobile-auth/token-exchange:
+    post:
+      tags: [Auth]
+      operationId: exchangeMobileAuthorizationCode
+      summary: Exchange a mobile OIDC code for a session token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileTokenExchangeRequest'
+      responses:
+        '200':
+          description: Session created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileTokenExchangeSuccess'
+        '400':
+          description: Missing or invalid required fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Token did not contain usable claims.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          description: Token exchange failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /mobile-auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logoutMobileSession
+      summary: Delete a mobile session token
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+      responses:
+        '200':
+          description: Logout processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutSuccess'
+
+  # ── Current user portal profile ─────────────────────────────────────────
+  /me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: Get current user's portal profile (role, convenings)
+      responses:
+        "200":
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalUserProfile"
+        "401":
+          description: Unauthenticated
+
+  # ── Invites ──────────────────────────────────────────────────────────────
+  /invites:
+    get:
+      operationId: listInvites
+      tags: [invites]
+      summary: List all sent invites (Admin only)
+      responses:
+        "200":
+          description: List of invites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InviteRecord"
+    post:
+      operationId: createInvite
+      tags: [invites]
+      summary: Create and send an invite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteInput"
+      responses:
+        "200":
+          description: Invite created and sent
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, inviteId]
+                properties:
+                  success:
+                    type: boolean
+                  inviteId:
+                    type: string
+
+  /invites/{id}/resend:
+    post:
+      operationId: resendInvite
+      tags: [invites]
+      summary: Resend an invite email (extends expiry)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invite resent
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+
+  # ── Convenings ───────────────────────────────────────────────────────────
+  /convenings:
+    get:
+      operationId: listConvenings
+      tags: [convenings]
+      summary: List accessible convenings
+      responses:
+        "200":
+          description: List of convenings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Convening"
+    post:
+      operationId: createConvening
+      tags: [convenings]
+      summary: Create a new convening
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConveningInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Convening"
+
+  /convenings/{id}/clone:
+    post:
+      operationId: cloneConvening
+      tags: [convenings]
+      summary: Clone scaffolding from a source convening into a new one
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloneConveningInput"
+      responses:
+        "201":
+          description: Newly created convening
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Convening"
+        "404":
+          description: Source not found
+
+  /convenings/{id}:
+    get:
+      operationId: getConvening
+      tags: [convenings]
+      summary: Get a convening by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Convening detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Convening"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateConvening
+      tags: [convenings]
+      summary: Update a convening
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConveningUpdate"
+      responses:
+        "200":
+          description: Updated convening
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Convening"
+    delete:
+      operationId: deleteConvening
+      tags: [convenings]
+      summary: Hard-delete an empty convening (Admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Convening has linked data
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, counts]
+                properties:
+                  error:
+                    type: string
+                  counts:
+                    type: object
+                    properties:
+                      partners:   { type: integer }
+                      speakers:   { type: integer }
+                      delegates:  { type: integer }
+                      workstreams: { type: integer }
+                      sessions:   { type: integer }
+
+  # ── Convening Team ───────────────────────────────────────────────────────
+  /convenings/{id}/team:
+    get:
+      operationId: listConveningTeam
+      tags: [convenings]
+      summary: List team members for a convening with workload stats
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of team members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConveningTeamMember"
+    post:
+      operationId: addConveningTeamMember
+      tags: [convenings]
+      summary: Add a member to the convening team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConveningTeamMemberInput"
+      responses:
+        "201":
+          description: Created team member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConveningTeamMember"
+
+  /convenings/{id}/team/{userId}:
+    delete:
+      operationId: removeConveningTeamMember
+      tags: [convenings]
+      summary: Remove a member from the convening team
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed
+
+  # ── Pillars ───────────────────────────────────────────────────────────────
+  /convenings/{id}/pillars:
+    get:
+      operationId: listPillars
+      tags: [pillars]
+      summary: List thematic pillars for a convening
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of pillars
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pillar"
+    post:
+      operationId: createPillar
+      tags: [pillars]
+      summary: Create a pillar for a convening
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PillarInput"
+      responses:
+        "201":
+          description: Created pillar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pillar"
+        "422":
+          description: Validation error
+
+  /convenings/{id}/pillars/{pillarId}:
+    patch:
+      operationId: updatePillar
+      tags: [pillars]
+      summary: Update a pillar
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pillarId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PillarInput"
+      responses:
+        "200":
+          description: Updated pillar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pillar"
+        "404":
+          description: Not found
+    delete:
+      operationId: deletePillar
+      tags: [pillars]
+      summary: Soft-delete a pillar
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pillarId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  # ── Sponsorship packages ─────────────────────────────────────────────────
+  /sponsorship-packages:
+    get:
+      operationId: listSponsorshipPackages
+      tags: [sponsorship-packages]
+      summary: List sponsorship packages for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of sponsorship packages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SponsorshipPackage"
+    post:
+      operationId: createSponsorshipPackage
+      tags: [sponsorship-packages]
+      summary: Create a sponsorship package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SponsorshipPackageInput"
+      responses:
+        "201":
+          description: Created package
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SponsorshipPackage"
+  /sponsorship-packages/{id}:
+    patch:
+      operationId: updateSponsorshipPackage
+      tags: [sponsorship-packages]
+      summary: Update a sponsorship package
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SponsorshipPackageUpdate"
+      responses:
+        "200":
+          description: Updated package
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SponsorshipPackage"
+    delete:
+      operationId: deleteSponsorshipPackage
+      tags: [sponsorship-packages]
+      summary: Delete a sponsorship package
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Pass type configs ─────────────────────────────────────────────────────
+  /pass-type-configs:
+    get:
+      operationId: listPassTypeConfigs
+      tags: [pass-type-configs]
+      summary: List pass type configs for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of pass type configs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PassTypeConfig"
+    post:
+      operationId: createPassTypeConfig
+      tags: [pass-type-configs]
+      summary: Create a pass type config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PassTypeConfigInput"
+      responses:
+        "201":
+          description: Created config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PassTypeConfig"
+  /pass-type-configs/copy-from:
+    post:
+      operationId: copyPassTypeConfigs
+      tags: [pass-type-configs]
+      summary: Copy pass type configs from one convening to another
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopyPassTypeConfigsInput"
+      responses:
+        "200":
+          description: Resulting pass type configs in the target convening
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PassTypeConfig"
+        "400":
+          description: Missing or invalid parameters
+
+  /pass-type-configs/{id}:
+    patch:
+      operationId: updatePassTypeConfig
+      tags: [pass-type-configs]
+      summary: Update a pass type config
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PassTypeConfigUpdate"
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PassTypeConfig"
+    delete:
+      operationId: deletePassTypeConfig
+      tags: [pass-type-configs]
+      summary: Delete a pass type config
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Partners ─────────────────────────────────────────────────────────────
+  /partners:
+    get:
+      operationId: listPartners
+      tags: [partners]
+      summary: List project-owned partner profiles
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of partners with engagement info
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PartnerWithEngagement"
+    post:
+      operationId: createPartner
+      tags: [partners]
+      deprecated: true
+      summary: Disabled global creation; use POST /partners/link with conveningId
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartnerInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Partner"
+
+  /partners/link:
+    post:
+      operationId: linkPartner
+      tags: [partners]
+      summary: Atomically create or reuse a directory institution and link it to a convening
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartnerLinkInput"
+      responses:
+        "201":
+          description: Linked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerLinkResult"
+        "409":
+          description: Institution already linked or archived
+
+  /partners/{id}/engagement:
+    patch:
+      operationId: updatePartnerEngagement
+      tags: [partners]
+      summary: Atomically update partner details and the specified convening engagement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartnerEngagementUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerLinkResult"
+        "404":
+          description: Partner is not linked to this convening
+
+  /partners/{id}:
+    get:
+      operationId: getPartner
+      tags: [partners]
+      summary: Get a partner by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Partner detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Partner"
+        "404":
+          description: Not found
+    patch:
+      operationId: updatePartner
+      tags: [partners]
+      deprecated: true
+      summary: Disabled global edit; use PATCH /partners/{id}/engagement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartnerUpdate"
+      responses:
+        "200":
+          description: Updated partner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Partner"
+    delete:
+      operationId: deletePartner
+      tags: [partners]
+      deprecated: true
+      summary: Disabled global delete; remove the convening engagement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  # ── Partner Engagements ──────────────────────────────────────────────────
+  /engagements:
+    get:
+      operationId: listEngagements
+      tags: [engagements]
+      summary: List partner engagements
+      parameters:
+        - name: conveningId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: partnerId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of engagements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Engagement"
+    post:
+      operationId: createEngagement
+      tags: [engagements]
+      summary: Create a partner engagement for a convening
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EngagementInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Engagement"
+
+  /engagements/{id}:
+    patch:
+      operationId: updateEngagement
+      tags: [engagements]
+      summary: Update a partner engagement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EngagementUpdate"
+      responses:
+        "200":
+          description: Updated engagement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Engagement"
+    delete:
+      operationId: deleteEngagement
+      tags: [engagements]
+      summary: Delete a partner engagement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /engagements/{id}/stage-history:
+    get:
+      operationId: listEngagementStageHistory
+      tags: [engagements]
+      summary: List outreach stage change history for an engagement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stage history entries newest-first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EngagementStageHistoryEntry"
+        "404":
+          description: Not found
+
+  # ── Speakers ─────────────────────────────────────────────────────────────
+  /speakers:
+    get:
+      operationId: listSpeakers
+      tags: [speakers]
+      summary: List speakers linked to a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of speakers with consent info
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SpeakerWithConsent"
+    post:
+      operationId: createSpeaker
+      tags: [speakers]
+      summary: Atomically create or reuse speaker identity and a project profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpeakerInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Speaker"
+
+  /speakers/{id}:
+    get:
+      operationId: getSpeaker
+      tags: [speakers]
+      summary: Get a speaker by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Speaker detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Speaker"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateSpeaker
+      tags: [speakers]
+      summary: Update a speaker
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpeakerUpdate"
+      responses:
+        "200":
+          description: Updated speaker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Speaker"
+    delete:
+      operationId: deleteSpeaker
+      tags: [speakers]
+      summary: Delete a speaker
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  # ── Speaker Engagements ──────────────────────────────────────────────────
+  /speaker-engagements:
+    get:
+      operationId: listSpeakerEngagements
+      tags: [speaker-engagements]
+      summary: List speaker engagements
+      parameters:
+        - name: conveningId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: speakerId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of speaker engagements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SpeakerEngagement"
+    post:
+      operationId: createSpeakerEngagement
+      tags: [speaker-engagements]
+      summary: Engage a speaker for a convening
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpeakerEngagementInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpeakerEngagement"
+
+  /speaker-engagements/{id}:
+    patch:
+      operationId: updateSpeakerEngagement
+      tags: [speaker-engagements]
+      summary: Update a speaker engagement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpeakerEngagementUpdate"
+      responses:
+        "200":
+          description: Updated speaker engagement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpeakerEngagement"
+
+  # ── Media Consents ───────────────────────────────────────────────────────
+  /consents:
+    get:
+      operationId: listConsents
+      tags: [consents]
+      summary: List media consents
+      parameters:
+        - name: speakerId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of consents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MediaConsent"
+    post:
+      operationId: createConsent
+      tags: [consents]
+      summary: Create a media consent record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MediaConsentInput"
+      responses:
+        "201":
+          description: Created consent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaConsent"
+
+  /consents/{id}:
+    patch:
+      operationId: updateConsent
+      tags: [consents]
+      summary: Update a media consent record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MediaConsentUpdate"
+      responses:
+        "200":
+          description: Updated consent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaConsent"
+
+  # ── Budgets ──────────────────────────────────────────────────────────────
+  /budgets:
+    get:
+      operationId: listBudgets
+      tags: [budgets]
+      summary: List budget items for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of budget items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Budget"
+    post:
+      operationId: createBudget
+      tags: [budgets]
+      summary: Create a budget line item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Budget"
+
+  /budgets/{id}:
+    patch:
+      operationId: updateBudget
+      tags: [budgets]
+      summary: Update a budget item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetUpdate"
+      responses:
+        "200":
+          description: Updated budget item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Budget"
+    delete:
+      operationId: deleteBudget
+      tags: [budgets]
+      summary: Delete a budget item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /budgets/comp-allocations:
+    get:
+      operationId: getSponsorCompAllocations
+      tags: [budgets]
+      summary: Per-tier sponsor comp allocations vs issued FreeSponsor delegates
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sponsor comp summary by tier
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SponsorCompSummary"
+
+  /budgets/sync:
+    post:
+      operationId: syncBudgets
+      tags: [budgets]
+      summary: Sync budget lines from live engagement and delegate data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetSyncInput"
+      responses:
+        "200":
+          description: Sync summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetSyncResult"
+
+  /budgets/export:
+    get:
+      operationId: exportBudgetCsv
+      tags: [budgets]
+      summary: Export full budget P&L as a CSV file (requires budget:export permission)
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CSV file download
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /budgets/email-export:
+    post:
+      operationId: emailBudgetExport
+      tags: [budgets]
+      summary: Send budget P&L summary by email with CSV attachment (requires budget:export permission)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetEmailExportInput"
+      responses:
+        "200":
+          description: Email sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sent, recipients]
+                properties:
+                  sent:
+                    type: boolean
+                  recipients:
+                    type: integer
+
+  # ── Milestones ───────────────────────────────────────────────────────────
+  /milestones:
+    get:
+      operationId: listMilestones
+      tags: [milestones]
+      summary: List milestones for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of milestones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Milestone"
+    post:
+      operationId: createMilestone
+      tags: [milestones]
+      summary: Create a milestone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MilestoneInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Milestone"
+
+  /milestones/{id}:
+    patch:
+      operationId: updateMilestone
+      tags: [milestones]
+      summary: Update a milestone
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MilestoneUpdate"
+      responses:
+        "200":
+          description: Updated milestone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Milestone"
+    delete:
+      operationId: deleteMilestone
+      tags: [milestones]
+      summary: Delete a milestone
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Workstreams ──────────────────────────────────────────────────────────
+  /workstreams:
+    get:
+      operationId: listWorkstreams
+      tags: [workstreams]
+      summary: List workstreams for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of workstreams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Workstream"
+    post:
+      operationId: createWorkstream
+      tags: [workstreams]
+      summary: Create a workstream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkstreamInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workstream"
+
+  /workstreams/{id}:
+    patch:
+      operationId: updateWorkstream
+      tags: [workstreams]
+      summary: Update a workstream
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkstreamUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workstream"
+    delete:
+      operationId: deleteWorkstream
+      tags: [workstreams]
+      summary: Delete a workstream
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "409":
+          description: Workstream has linked tasks and cannot be deleted
+        "404":
+          description: Not found
+
+  # ── Tasks ────────────────────────────────────────────────────────────────
+  /tasks:
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      summary: List tasks
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: workstreamId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Create a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+
+  /tasks/{id}:
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      summary: Update a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskUpdate"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      summary: Delete a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /tasks/{id}/attachments:
+    get:
+      operationId: listTaskAttachments
+      tags: [tasks]
+      summary: List attachments for a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of task attachments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskAttachment"
+    post:
+      operationId: createTaskAttachment
+      tags: [tasks]
+      summary: Attach a file or link to a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskAttachmentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskAttachment"
+
+  /task-attachments/{id}:
+    delete:
+      operationId: deleteTaskAttachment
+      tags: [tasks]
+      summary: Remove an attachment from a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Agenda Sessions ──────────────────────────────────────────────────────
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      summary: List agenda sessions for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: day
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgendaSession"
+    post:
+      operationId: createSession
+      tags: [sessions]
+      summary: Create an agenda session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgendaSessionInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgendaSession"
+
+  /sessions/{id}:
+    get:
+      operationId: getSession
+      tags: [sessions]
+      summary: Get a session by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgendaSession"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateSession
+      tags: [sessions]
+      summary: Update a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgendaSessionUpdate"
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgendaSession"
+    delete:
+      operationId: deleteSession
+      tags: [sessions]
+      summary: Delete a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /sessions/{id}/speakers:
+    get:
+      operationId: listSessionSpeakers
+      tags: [sessions]
+      summary: List speakers on a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of session speakers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionSpeakerEntry"
+    post:
+      operationId: addSessionSpeaker
+      tags: [sessions]
+      summary: Add a speaker to a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionSpeakerInput"
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSpeakerEntry"
+
+  /sessions/{sessionId}/speakers/{speakerId}:
+    patch:
+      operationId: updateSessionSpeaker
+      tags: [sessions]
+      summary: Update a session speaker's role or status
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: speakerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionSpeakerPatch"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSpeakerEntry"
+    delete:
+      operationId: removeSessionSpeaker
+      tags: [sessions]
+      summary: Remove a speaker from a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: speakerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed
+
+  # ── Service Providers ────────────────────────────────────────────────────
+  /service-providers:
+    get:
+      operationId: listServiceProviders
+      tags: [service-providers]
+      summary: List project-owned providers and already-booked read-only legacy providers
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of service providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServiceProvider"
+    post:
+      operationId: createServiceProvider
+      tags: [service-providers]
+      summary: Create a service provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceProviderInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceProvider"
+
+  /service-providers/{id}:
+    get:
+      operationId: getServiceProvider
+      tags: [service-providers]
+      summary: Get a service provider
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Service provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceProvider"
+    put:
+      operationId: updateServiceProvider
+      tags: [service-providers]
+      summary: Update a service provider
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceProviderInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceProvider"
+    delete:
+      operationId: deleteServiceProvider
+      tags: [service-providers]
+      summary: Delete a service provider
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Provider Bookings (per convening) ─────────────────────────────────────
+  /provider-bookings:
+    get:
+      operationId: listProviderBookings
+      tags: [provider-bookings]
+      summary: List provider bookings for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of bookings with embedded provider
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProviderBookingWithProvider"
+    post:
+      operationId: createProviderBooking
+      tags: [provider-bookings]
+      summary: Create a provider booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderBookingInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderBookingWithProvider"
+
+  /provider-bookings/{id}:
+    put:
+      operationId: updateProviderBooking
+      tags: [provider-bookings]
+      summary: Update a provider booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderBookingInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderBookingWithProvider"
+    delete:
+      operationId: deleteProviderBooking
+      tags: [provider-bookings]
+      summary: Delete a provider booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Deal Room ────────────────────────────────────────────────────────────
+  /deal-projects:
+    get:
+      operationId: listDealProjects
+      tags: [dealRoom]
+      summary: List deal projects for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of deal projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DealProject"
+    post:
+      operationId: createDealProject
+      tags: [dealRoom]
+      summary: Register a new deal project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DealProjectInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealProject"
+
+  /deal-projects/{id}:
+    get:
+      operationId: getDealProject
+      tags: [dealRoom]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deal project detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealProject"
+    patch:
+      operationId: updateDealProject
+      tags: [dealRoom]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DealProjectUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealProject"
+    delete:
+      operationId: deleteDealProject
+      tags: [dealRoom]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /deal-matches:
+    get:
+      operationId: listDealMatches
+      tags: [dealRoom]
+      summary: List deal matches for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DealMatchWithProjects"
+
+  /deal-matches/suggest:
+    post:
+      operationId: suggestDealMatches
+      tags: [dealRoom]
+      summary: Run matchmaking for a convening
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuggestMatchesInput"
+      responses:
+        "200":
+          description: Suggested matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DealMatchWithProjects"
+
+  /deal-matches/{id}:
+    patch:
+      operationId: updateDealMatch
+      tags: [dealRoom]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DealMatchUpdate"
+      responses:
+        "200":
+          description: Updated match
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealMatchWithProjects"
+
+  /deal-meetings:
+    get:
+      operationId: listDealMeetings
+      tags: [dealRoom]
+      summary: List deal meetings for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of deal meetings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DealMeeting"
+    post:
+      operationId: createDealMeeting
+      tags: [dealRoom]
+      summary: Schedule a deal meeting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DealMeetingInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealMeeting"
+
+  /deal-meetings/{id}:
+    patch:
+      operationId: updateDealMeeting
+      tags: [dealRoom]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DealMeetingUpdate"
+      responses:
+        "200":
+          description: Updated meeting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealMeeting"
+    delete:
+      operationId: deleteDealMeeting
+      tags: [dealRoom]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /deal-commitments:
+    get:
+      operationId: listDealCommitments
+      tags: [dealRoom]
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of signings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DealCommitment"
+    post:
+      operationId: createDealCommitment
+      tags: [dealRoom]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DealCommitmentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealCommitment"
+
+  /deal-commitments/{id}:
+    patch:
+      operationId: updateDealCommitment
+      tags: [dealRoom]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DealCommitmentInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealCommitment"
+    delete:
+      operationId: deleteDealCommitment
+      tags: [dealRoom]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Outcomes ─────────────────────────────────────────────────────────────
+  /commitments:
+    get:
+      operationId: listCommitments
+      tags: [outcomes]
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of commitments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Commitment"
+    post:
+      operationId: createCommitment
+      tags: [outcomes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommitmentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Commitment"
+
+  /commitments/{id}:
+    patch:
+      operationId: updateCommitment
+      tags: [outcomes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommitmentUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Commitment"
+    delete:
+      operationId: deleteCommitment
+      tags: [outcomes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /scorecard:
+    get:
+      operationId: getScorecard
+      tags: [outcomes]
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scorecard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scorecard"
+
+  # ── Project-scoped trash ─────────────────────────────────────────────────
+  /trash:
+    get:
+      operationId: listTrash
+      tags: [trash]
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Soft-deleted project records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+  /trash/{entityType}/{id}/restore:
+    patch:
+      operationId: restoreTrashItem
+      tags: [trash]
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Restored project record
+  /trash/{entityType}/{id}:
+    delete:
+      operationId: purgeTrashItem
+      tags: [trash]
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Permanently deleted project record
+
+  # ── Documents & Templates ────────────────────────────────────────────────
+  /documents:
+    get:
+      operationId: listDocuments
+      tags: [documents]
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConveningDocument"
+    post:
+      operationId: createDocument
+      tags: [documents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConveningDocumentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConveningDocument"
+
+  /documents/{id}:
+    patch:
+      operationId: updateDocument
+      tags: [documents]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConveningDocumentUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConveningDocument"
+    delete:
+      operationId: deleteDocument
+      tags: [documents]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /templates:
+    get:
+      operationId: listTemplates
+      tags: [documents]
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OutreachTemplate"
+    post:
+      operationId: createTemplate
+      tags: [documents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OutreachTemplateInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutreachTemplate"
+
+  /templates/{id}:
+    patch:
+      operationId: updateTemplate
+      tags: [documents]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OutreachTemplateInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutreachTemplate"
+    delete:
+      operationId: deleteTemplate
+      tags: [documents]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Object Storage ───────────────────────────────────────────────────────
+  /storage/uploads/request-url:
+    post:
+      tags: [Storage]
+      operationId: requestUploadUrl
+      summary: Request a presigned URL for file upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequest'
+      responses:
+        '200':
+          description: Presigned upload URL generated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadUrlResponse'
+        '400':
+          description: Missing or invalid fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /storage/objects/{objectPath}:
+    get:
+      tags: [Storage]
+      operationId: getStorageObject
+      summary: Serve an uploaded object
+      parameters:
+        - name: objectPath
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Object content.
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  # ── Analytics (dashboard wow endpoint) ──────────────────────────────────
+  /analytics:
+    get:
+      operationId: getAnalytics
+      tags: [analytics]
+      summary: Dashboard analytics for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Analytics data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsDashboard"
+
+  # ── Users (admin) ────────────────────────────────────────────────────────
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all portal users (admin only)
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PortalUser"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Provision a new portal user (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortalUserInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalUser"
+
+  /users/{id}:
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update a user's role or convening access
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortalUserUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalUser"
+
+  # ── Delegates ─────────────────────────────────────────────────────────────
+  /delegates:
+    get:
+      operationId: listDelegates
+      tags: [delegates]
+      summary: List delegates for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of delegates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Delegate"
+    post:
+      operationId: createDelegate
+      tags: [delegates]
+      summary: Create a delegate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DelegateInput"
+      responses:
+        "201":
+          description: Created delegate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Delegate"
+
+  /delegates/export:
+    get:
+      operationId: exportDelegatesCsv
+      tags: [delegates]
+      summary: Export delegate list as CSV (requires delegates:export permission)
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: segment
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by segment name (omit or "All" for no filter)
+        - name: passTypeCategory
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [All, Paying, Comp]
+          description: Filter by pass type category
+      responses:
+        "200":
+          description: CSV file download
+          content:
+            text/csv:
+              schema:
+                type: string
+        "403":
+          description: Forbidden
+
+  /delegates/export-schedule:
+    get:
+      operationId: getDelegateExportSchedule
+      tags: [delegates]
+      summary: Get the scheduled daily delegate CSV export config for a convening (requires delegates:export permission)
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Schedule config (null fields if none configured yet)
+          content:
+            application/json:
+              schema:
+                type: object
+                nullable: true
+                allOf:
+                  - $ref: "#/components/schemas/DelegateExportSchedule"
+        "403":
+          description: Forbidden
+    put:
+      operationId: putDelegateExportSchedule
+      tags: [delegates]
+      summary: Create or update the scheduled daily delegate CSV export config (requires delegates:export permission)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DelegateExportScheduleInput"
+      responses:
+        "200":
+          description: Saved schedule config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DelegateExportSchedule"
+        "403":
+          description: Forbidden
+        "422":
+          description: Validation failed
+
+  /delegates/verify:
+    get:
+      operationId: verifyDelegateByQr
+      tags: [delegates]
+      summary: Verify delegate by QR code (Tukutane integration)
+      parameters:
+        - name: qrCode
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delegate public record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DelegateVerifyResponse"
+        "404":
+          description: Not found
+
+  /delegates/check-in:
+    post:
+      operationId: checkInByQr
+      tags: [delegates]
+      summary: Check in a delegate by QR code (set status to Attended)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DelegateCheckInInput"
+      responses:
+        "200":
+          description: Updated delegate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Delegate"
+        "404":
+          description: Not found
+
+  /delegates/{id}:
+    patch:
+      operationId: updateDelegate
+      tags: [delegates]
+      summary: Update a delegate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DelegateUpdate"
+      responses:
+        "200":
+          description: Updated delegate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Delegate"
+    delete:
+      operationId: deleteDelegate
+      tags: [delegates]
+      summary: Delete a delegate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /exhibitors:
+    get:
+      operationId: listExhibitors
+      tags: [exhibitors]
+      summary: List exhibitors for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Exhibitor"
+    post:
+      operationId: createExhibitor
+      tags: [exhibitors]
+      summary: Create an exhibitor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExhibitorInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exhibitor"
+
+  /exhibitors/{id}:
+    patch:
+      operationId: updateExhibitor
+      tags: [exhibitors]
+      summary: Update an exhibitor
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExhibitorUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exhibitor"
+    delete:
+      operationId: deleteExhibitor
+      tags: [exhibitors]
+      summary: Delete an exhibitor
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /booths:
+    get:
+      operationId: listBooths
+      tags: [booths]
+      summary: List booths for a convening
+      parameters:
+        - name: conveningId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Booth"
+    post:
+      operationId: createBooth
+      tags: [booths]
+      summary: Create a booth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BoothInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booth"
+
+  /booths/{id}:
+    patch:
+      operationId: updateBooth
+      tags: [booths]
+      summary: Update a booth (assign/release exhibitor, change status)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BoothUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booth"
+    delete:
+      operationId: deleteBooth
+      tags: [booths]
+      summary: Delete a booth
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Google Sheets sync ───────────────────────────────────────────────────────
+  /admin/sheets/sync:
+    post:
+      operationId: triggerSheetsSync
+      tags: [sheets]
+      summary: Trigger on-demand Google Sheets sync for a convening (Admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SheetsSyncInput"
+      responses:
+        "200":
+          description: Sync complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SheetsSyncResult"
+        "400":
+          description: Google Sheets not configured or bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422":
+          description: Validation failed
+
+components:
+  parameters:
+    AuthorizationSessionHeader:
+      name: Authorization
+      in: header
+      required: false
+      description: Opaque session token — `Bearer <sid>`.
+      schema:
+        type: string
+    SessionCookie:
+      name: sid
+      in: cookie
+      required: false
+      description: Browser session cookie.
+      schema:
+        type: string
+
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    # ── Sheets sync ─────────────────────────────────────────────────────────
+    SheetsSyncInput:
+      type: object
+      required: [conveningId]
+      properties:
+        conveningId:
+          type: string
+
+    SheetsSyncResult:
+      type: object
+      required: [spreadsheetId, spreadsheetUrl, sheetsLastSyncedAt]
+      properties:
+        spreadsheetId:
+          type: string
+        spreadsheetUrl:
+          type: string
+        sheetsLastSyncedAt:
+          type: string
+          format: date-time
+
+    # ── Auth ────────────────────────────────────────────────────────────────
+    AuthUser:
+      type: object
+      required: [id, email, firstName, lastName, profileImageUrl]
+      properties:
+        id:
+          type: string
+        email:
+          type: [string, 'null']
+          format: email
+        firstName:
+          type: [string, 'null']
+        lastName:
+          type: [string, 'null']
+        profileImageUrl:
+          type: [string, 'null']
+    AuthUserEnvelope:
+      type: object
+      required: [user]
+      properties:
+        user:
+          oneOf:
+            - $ref: '#/components/schemas/AuthUser'
+            - type: 'null'
+    MobileTokenExchangeRequest:
+      type: object
+      required: [code, code_verifier, redirect_uri, state]
+      properties:
+        code:
+          type: string
+          minLength: 1
+        code_verifier:
+          type: string
+          minLength: 1
+        redirect_uri:
+          type: string
+          minLength: 1
+          format: uri
+        state:
+          type: string
+          minLength: 1
+        nonce:
+          type: string
+          minLength: 1
+    MobileTokenExchangeSuccess:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    LogoutSuccess:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          const: true
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    # ── Portal User / RBAC ──────────────────────────────────────────────────
+    PortalUser:
+      type: object
+      required: [id, authUserId, name, role, accountType, conveningIds, createdAt]
+      properties:
+        id:
+          type: string
+        authUserId:
+          type: string
+        name:
+          type: string
+        email:
+          type: [string, 'null']
+        role:
+          type: string
+          enum: [Admin, Curator, Finance, PartnerLead, SpeakerLead, Ops, PressManager, Advisor, Client]
+        accountType:
+          type: string
+          enum: [Internal, External]
+        conveningIds:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+    PortalUserProfile:
+      type: object
+      required: [id, authUserId, name, role, accountType, conveningIds]
+      properties:
+        id:
+          type: string
+        authUserId:
+          type: string
+        name:
+          type: string
+        email:
+          type: [string, 'null']
+        role:
+          type: string
+          enum: [Admin, Curator, Finance, PartnerLead, SpeakerLead, Ops, PressManager, Advisor, Client]
+        accountType:
+          type: string
+          enum: [Internal, External]
+        conveningIds:
+          type: array
+          items:
+            type: string
+    PortalUserInput:
+      type: object
+      required: [authUserId, name, role, accountType]
+      properties:
+        authUserId:
+          type: string
+        name:
+          type: string
+        email:
+          type: [string, 'null']
+        role:
+          type: string
+          enum: [Admin, Curator, Finance, PartnerLead, SpeakerLead, Ops, PressManager, Advisor, Client]
+        accountType:
+          type: string
+          enum: [Internal, External]
+        conveningIds:
+          type: array
+          items:
+            type: string
+    PortalUserUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          enum: [Admin, Curator, Finance, PartnerLead, SpeakerLead, Ops, PressManager, Advisor, Client]
+        accountType:
+          type: string
+          enum: [Internal, External]
+        conveningIds:
+          type: array
+          items:
+            type: string
+
+    # ── Convenings ───────────────────────────────────────────────────────────
+    Convening:
+      type: object
+      required: [id, name, slug, status, venueConfirmed, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        theme:
+          type: [string, 'null']
+        startDate:
+          type: [string, 'null']
+          format: date
+        endDate:
+          type: [string, 'null']
+          format: date
+        venueName:
+          type: [string, 'null']
+        venueConfirmed:
+          type: boolean
+        status:
+          type: string
+          enum: [Planning, Active, Completed, Archived]
+        timezone:
+          type: string
+        usdToUgxRate:
+          type: number
+          nullable: true
+        whiteLabel:
+          type: boolean
+        brandLogoUrl:
+          type: [string, 'null']
+        brandPrimaryColor:
+          type: [string, 'null']
+        brandAccentColor:
+          type: [string, 'null']
+        registrationTarget:
+          type: integer
+          nullable: true
+        compPassCap:
+          type: integer
+        googleSheetId:
+          type: [string, 'null']
+        sheetsLastSyncedAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    ConveningInput:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        theme:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        venueName:
+          type: string
+        venueConfirmed:
+          type: boolean
+        timezone:
+          type: string
+        status:
+          type: string
+          enum: [Planning, Active, Completed, Archived]
+        usdToUgxRate:
+          type: number
+        whiteLabel:
+          type: boolean
+        brandLogoUrl:
+          type: string
+        brandPrimaryColor:
+          type: string
+        brandAccentColor:
+          type: string
+    ConveningUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        theme:
+          type: string
+        startDate:
+          type: [string, 'null']
+          format: date
+        endDate:
+          type: [string, 'null']
+          format: date
+        venueName:
+          type: [string, 'null']
+        venueConfirmed:
+          type: boolean
+        status:
+          type: string
+          enum: [Planning, Active, Completed, Archived]
+        usdToUgxRate:
+          type: number
+          nullable: true
+        whiteLabel:
+          type: boolean
+        brandLogoUrl:
+          type: [string, 'null']
+        brandPrimaryColor:
+          type: [string, 'null']
+        brandAccentColor:
+          type: [string, 'null']
+        timezone:
+          type: string
+        registrationTarget:
+          type: integer
+        compPassCap:
+          type: integer
+
+    CloneConveningInput:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        theme:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        venueName:
+          type: string
+        status:
+          type: string
+          enum: [Planning, Active, Completed, Archived]
+        include:
+          type: object
+          properties:
+            workstreams:
+              type: boolean
+            tasks:
+              type: boolean
+            agenda:
+              type: boolean
+
+    # ── Partners ─────────────────────────────────────────────────────────────
+    Partner:
+      type: object
+      required: [id, institutionName, partnerType, potentialTier, historicalEngagement, createdAt]
+      properties:
+        id:
+          type: string
+        institutionName:
+          type: string
+        partnerType:
+          type: string
+          enum: [GovernmentPolicy, DevelopmentPartner, DevelopmentFinance, BanksFinancial, PensionFunds, PensionBodies, CapitalMarkets, TelecomDigital, KnowledgeMedia, TourismHospitality, AviationLogistics, Media, Institutional]
+        sector:
+          type: [string, 'null']
+          enum: [Public, Private, DevelopmentPartner, CivilSociety, Academia, 'null']
+        industry:
+          type: [string, 'null']
+        logoUrl:
+          type: [string, 'null']
+        description:
+          type: [string, 'null']
+        location:
+          type: [string, 'null']
+        contactName:
+          type: [string, 'null']
+        contactTitle:
+          type: [string, 'null']
+        contactEmail:
+          type: [string, 'null']
+        contactPhone:
+          type: [string, 'null']
+        principals:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              title:
+                type: string
+              email:
+                type: string
+              phone:
+                type: string
+              linkedin:
+                type: string
+        potentialTier:
+          type: string
+          enum: [Platinum, Gold, Silver, CredibilityOnly, InKind]
+        historicalEngagement:
+          type: string
+          enum: [Yes, No, Partial]
+        fitWithThem:
+          type: [string, 'null']
+        historicalNotes:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+    PartnerWithEngagement:
+      type: object
+      required: [id, institutionName, partnerType, potentialTier, historicalEngagement, createdAt]
+      properties:
+        id:
+          type: string
+        institutionName:
+          type: string
+        partnerType:
+          type: string
+          enum: [GovernmentPolicy, DevelopmentPartner, DevelopmentFinance, BanksFinancial, PensionFunds, PensionBodies, CapitalMarkets, TelecomDigital, KnowledgeMedia, TourismHospitality, AviationLogistics, Media, Institutional]
+        sector:
+          type: [string, 'null']
+          enum: [Public, Private, DevelopmentPartner, CivilSociety, Academia, 'null']
+        industry:
+          type: [string, 'null']
+        logoUrl:
+          type: [string, 'null']
+        description:
+          type: [string, 'null']
+        location:
+          type: [string, 'null']
+        contactName:
+          type: [string, 'null']
+        contactTitle:
+          type: [string, 'null']
+        contactEmail:
+          type: [string, 'null']
+        contactPhone:
+          type: [string, 'null']
+        principals:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              title:
+                type: string
+              email:
+                type: string
+              phone:
+                type: string
+              linkedin:
+                type: string
+        potentialTier:
+          type: string
+          enum: [Platinum, Gold, Silver, CredibilityOnly, InKind]
+        historicalEngagement:
+          type: string
+          enum: [Yes, No, Partial]
+        fitWithThem:
+          type: [string, 'null']
+        historicalNotes:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        engagement:
+          oneOf:
+            - $ref: '#/components/schemas/Engagement'
+            - type: 'null'
+    PartnerInput:
+      type: object
+      required: [institutionName]
+      properties:
+        institutionName:
+          type: string
+        partnerType:
+          type: string
+          enum: [GovernmentPolicy, DevelopmentPartner, DevelopmentFinance, BanksFinancial, PensionFunds, PensionBodies, CapitalMarkets, TelecomDigital, KnowledgeMedia, TourismHospitality, AviationLogistics, Media, Institutional]
+        sector:
+          type: string
+          enum: [Public, Private, DevelopmentPartner, CivilSociety, Academia]
+        industry:
+          type: string
+        logoUrl:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        contactName:
+          type: string
+        contactTitle:
+          type: string
+        contactEmail:
+          type: string
+        contactPhone:
+          type: string
+        principals:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              title:
+                type: string
+              email:
+                type: string
+              phone:
+                type: string
+              linkedin:
+                type: string
+        potentialTier:
+          type: string
+          enum: [Platinum, Gold, Silver, CredibilityOnly, InKind]
+        historicalEngagement:
+          type: string
+          enum: [Yes, No, Partial]
+        fitWithThem:
+          type: string
+        historicalNotes:
+          type: string
+    PartnerLinkInput:
+      type: object
+      required: [conveningId]
+      properties:
+        conveningId:
+          type: string
+        partnerId:
+          type: string
+        partner:
+          $ref: "#/components/schemas/PartnerInput"
+        engagement:
+          $ref: "#/components/schemas/EngagementUpdate"
+    PartnerEngagementUpdate:
+      type: object
+      required: [conveningId]
+      properties:
+        conveningId:
+          type: string
+        partner:
+          $ref: "#/components/schemas/PartnerUpdate"
+        engagement:
+          $ref: "#/components/schemas/EngagementUpdate"
+    PartnerLinkResult:
+      type: object
+      required: [partner, engagement]
+      properties:
+        partner:
+          $ref: "#/components/schemas/Partner"
+        engagement:
+          $ref: "#/components/schemas/Engagement"
+    PartnerUpdate:
+      type: object
+      properties:
+        institutionName:
+          type: string
+        partnerType:
+          type: string
+          enum: [GovernmentPolicy, DevelopmentPartner, DevelopmentFinance, BanksFinancial, PensionFunds, PensionBodies, CapitalMarkets, TelecomDigital, KnowledgeMedia, TourismHospitality, AviationLogistics, Media, Institutional]
+        sector:
+          type: [string, 'null']
+          enum: [Public, Private, DevelopmentPartner, CivilSociety, Academia, 'null']
+        industry:
+          type: [string, 'null']
+        logoUrl:
+          type: [string, 'null']
+        description:
+          type: [string, 'null']
+        location:
+          type: [string, 'null']
+        contactName:
+          type: [string, 'null']
+        contactTitle:
+          type: [string, 'null']
+        contactEmail:
+          type: [string, 'null']
+        contactPhone:
+          type: [string, 'null']
+        principals:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              title:
+                type: string
+              email:
+                type: string
+              phone:
+                type: string
+              linkedin:
+                type: string
+        potentialTier:
+          type: string
+          enum: [Platinum, Gold, Silver, CredibilityOnly, InKind]
+        historicalEngagement:
+          type: string
+          enum: [Yes, No, Partial]
+        fitWithThem:
+          type: [string, 'null']
+        historicalNotes:
+          type: [string, 'null']
+
+    # ── Engagements ──────────────────────────────────────────────────────────
+    Engagement:
+      type: object
+      required: [id, conveningId, partnerId, status]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        partnerId:
+          type: string
+        responsiblePerson:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [Prospect, Negotiation, ContractSigned, Onboarded, PostEvent]
+        natureOfResponse:
+          type: [string, 'null']
+          enum: [Interested, Negotiating, Declined, Deferred, 'null']
+        commitmentType:
+          type: [string, 'null']
+          enum: [Financial, Speakers, InKind, Credibility, Multiple, 'null']
+        commitmentDetails:
+          type: [string, 'null']
+        financialAmount:
+          type: number
+        currency:
+          type: string
+        invoiceSent:
+          type: boolean
+        invoicePaid:
+          type: boolean
+        finalTier:
+          type: [string, 'null']
+        delegatePassesAllocated:
+          type: integer
+        brandingAssetsReceived:
+          type: boolean
+        logisticsNotes:
+          type: [string, 'null']
+        paymentPreferences:
+          type: [string, 'null']
+        followUpRequired:
+          type: boolean
+        followUpDate:
+          type: [string, 'null']
+          format: date
+        followUpAction:
+          type: [string, 'null']
+        paymentStatus:
+          type: [string, 'null']
+          enum: [Unpaid, PartiallyPaid, Paid, 'null']
+        paymentDueDate:
+          type: [string, 'null']
+          format: date
+        packageName:
+          type: [string, 'null']
+        packageType:
+          type: [string, 'null']
+          enum: [Standard, Custom, 'null']
+        packageBenefits:
+          type: [string, 'null']
+        outreachStage:
+          type: string
+          enum: [NotStarted, ContactMade, EmailSent, FollowUpRequired, MeetingScheduled, MeetingHeld, ProposalSent, AwaitingDecision, PartnershipConfirmed]
+        pillarId:
+          type: [string, 'null']
+    EngagementInput:
+      type: object
+      required: [conveningId, partnerId]
+      properties:
+        conveningId:
+          type: string
+        partnerId:
+          type: string
+        responsiblePerson:
+          type: string
+        status:
+          type: string
+          enum: [Prospect, Negotiation, ContractSigned, Onboarded, PostEvent]
+        commitmentType:
+          type: string
+          enum: [Financial, Speakers, InKind, Credibility, Multiple]
+        financialAmount:
+          type: number
+        currency:
+          type: string
+        paymentStatus:
+          type: string
+          enum: [Unpaid, PartiallyPaid, Paid]
+        paymentDueDate:
+          type: string
+          format: date
+        packageName:
+          type: string
+        packageType:
+          type: string
+          enum: [Standard, Custom]
+        packageBenefits:
+          type: string
+        outreachStage:
+          type: string
+          enum: [NotStarted, ContactMade, EmailSent, FollowUpRequired, MeetingScheduled, MeetingHeld, ProposalSent, AwaitingDecision, PartnershipConfirmed]
+        pillarId:
+          type: string
+    EngagementUpdate:
+      type: object
+      properties:
+        responsiblePerson:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [Prospect, Negotiation, ContractSigned, Onboarded, PostEvent]
+        natureOfResponse:
+          type: [string, 'null']
+          enum: [Interested, Negotiating, Declined, Deferred, 'null']
+        commitmentType:
+          type: [string, 'null']
+          enum: [Financial, Speakers, InKind, Credibility, Multiple, 'null']
+        commitmentDetails:
+          type: [string, 'null']
+        financialAmount:
+          type: number
+        currency:
+          type: string
+        invoiceSent:
+          type: boolean
+        invoicePaid:
+          type: boolean
+        finalTier:
+          type: [string, 'null']
+        delegatePassesAllocated:
+          type: integer
+        brandingAssetsReceived:
+          type: boolean
+        logisticsNotes:
+          type: [string, 'null']
+        paymentPreferences:
+          type: [string, 'null']
+        followUpRequired:
+          type: boolean
+        followUpDate:
+          type: [string, 'null']
+          format: date
+        followUpAction:
+          type: [string, 'null']
+        paymentStatus:
+          type: [string, 'null']
+          enum: [Unpaid, PartiallyPaid, Paid, 'null']
+        paymentDueDate:
+          type: [string, 'null']
+          format: date
+        packageName:
+          type: [string, 'null']
+        packageType:
+          type: [string, 'null']
+          enum: [Standard, Custom, 'null']
+        packageBenefits:
+          type: [string, 'null']
+        outreachStage:
+          type: string
+          enum: [NotStarted, ContactMade, EmailSent, FollowUpRequired, MeetingScheduled, MeetingHeld, ProposalSent, AwaitingDecision, PartnershipConfirmed]
+        pillarId:
+          type: [string, 'null']
+
+    EngagementStageHistoryEntry:
+      type: object
+      required: [id, engagementId, conveningId, actorUserId, toStage, createdAt]
+      properties:
+        id:
+          type: string
+        engagementId:
+          type: string
+        conveningId:
+          type: string
+        actorUserId:
+          type: string
+        actorName:
+          type: string
+          nullable: true
+        fromStage:
+          type: string
+          nullable: true
+        toStage:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    # ── Pillars ───────────────────────────────────────────────────────────────
+    Pillar:
+      type: object
+      required: [id, conveningId, name, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+    PillarInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    # ── Speakers ─────────────────────────────────────────────────────────────
+    Speaker:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        title:
+          type: [string, 'null']
+        gender:
+          type: [string, 'null']
+        expertise:
+          type: array
+          items:
+            type: string
+        experienceSummary:
+          type: [string, 'null']
+        photoUrl:
+          type: [string, 'null']
+        bioShort:
+          type: [string, 'null']
+        bioMedium:
+          type: [string, 'null']
+        email:
+          type: [string, 'null']
+        phone:
+          type: [string, 'null']
+        timezone:
+          type: [string, 'null']
+        preferredContactMethod:
+          type: string
+          enum: [Email, Phone, WhatsApp]
+        speakerCategory:
+          type: [string, 'null']
+          enum: [PartnerLinked, NonPartnerLinked, AdvisoryBoard, Internal, 'null']
+        createdAt:
+          type: string
+          format: date-time
+    SpeakerWithConsent:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        title:
+          type: [string, 'null']
+        gender:
+          type: [string, 'null']
+        expertise:
+          type: array
+          items:
+            type: string
+        photoUrl:
+          type: [string, 'null']
+        bioShort:
+          type: [string, 'null']
+        email:
+          type: [string, 'null']
+        timezone:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        consentStatus:
+          type: [string, 'null']
+          enum: [NotRequested, Pending, Granted, PartiallyGranted, Declined, Withdrawn, 'null']
+        engagementStatus:
+          type: [string, 'null']
+          enum: [Identified, Invited, Confirmed, Briefed, Ready, Attended, Thanked, 'null']
+        location:
+          type: [string, 'null']
+        affiliationType:
+          type: [string, 'null']
+          enum: [Public, Private, DevelopmentPartner, Academic, Other, 'null']
+        speakerCategory:
+          type: [string, 'null']
+          enum: [PartnerLinked, NonPartnerLinked, AdvisoryBoard, Internal, 'null']
+        notes:
+          type: [string, 'null']
+        engagementDueDate:
+          type: [string, 'null']
+          format: date
+        engagementId:
+          type: [string, 'null']
+        pillarId:
+          type: [string, 'null']
+        pillarName:
+          type: [string, 'null']
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpeakerSessionPlacement'
+    SpeakerInput:
+      type: object
+      required: [name, conveningId]
+      properties:
+        conveningId:
+          type: string
+        name:
+          type: string
+        title:
+          type: string
+        gender:
+          type: string
+        expertise:
+          type: array
+          items:
+            type: string
+        experienceSummary:
+          type: string
+        bioShort:
+          type: string
+        bioMedium:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        timezone:
+          type: string
+        preferredContactMethod:
+          type: string
+          enum: [Email, Phone, WhatsApp]
+        location:
+          type: string
+        affiliationType:
+          type: string
+          enum: [Public, Private, DevelopmentPartner, Academic, Other]
+        speakerCategory:
+          type: string
+          enum: [PartnerLinked, NonPartnerLinked, AdvisoryBoard, Internal]
+        notes:
+          type: string
+    SpeakerUpdate:
+      type: object
+      required: [conveningId]
+      properties:
+        conveningId:
+          type: string
+        name:
+          type: string
+        title:
+          type: [string, 'null']
+        gender:
+          type: [string, 'null']
+        expertise:
+          type: array
+          items:
+            type: string
+        experienceSummary:
+          type: [string, 'null']
+        photoUrl:
+          type: [string, 'null']
+        bioShort:
+          type: [string, 'null']
+        bioMedium:
+          type: [string, 'null']
+        email:
+          type: [string, 'null']
+        phone:
+          type: [string, 'null']
+        timezone:
+          type: [string, 'null']
+        preferredContactMethod:
+          type: string
+          enum: [Email, Phone, WhatsApp]
+        location:
+          type: [string, 'null']
+        affiliationType:
+          type: [string, 'null']
+          enum: [Public, Private, DevelopmentPartner, Academic, Other, 'null']
+        speakerCategory:
+          type: [string, 'null']
+          enum: [PartnerLinked, NonPartnerLinked, AdvisoryBoard, Internal, 'null']
+        notes:
+          type: [string, 'null']
+
+    # ── Speaker Engagements ──────────────────────────────────────────────────
+    SpeakerEngagement:
+      type: object
+      required: [id, conveningId, speakerId, invitationStatus, invitationResponse]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        speakerId:
+          type: string
+        sessionType:
+          type: [string, 'null']
+          enum: [Keynote, Panelist, WorkshopLead, Chair, Breakaway, BusinessCircle, null]
+        sessionTitle:
+          type: [string, 'null']
+        sessionTheme:
+          type: [string, 'null']
+        sourcePartnerId:
+          type: [string, 'null']
+        sourceType:
+          type: string
+          enum: [Partner, External]
+        invitationStatus:
+          type: string
+          enum: [Identified, Invited, Confirmed, Briefed, Ready, Attended, Thanked]
+        invitationResponse:
+          type: string
+          enum: [Accepted, Declined, Negotiating, NoResponse]
+        dueDate:
+          type: [string, 'null']
+        briefingDocsSent:
+          type: boolean
+        briefingDocsUrl:
+          type: [string, 'null']
+        logisticsConfirmed:
+          type: boolean
+        flightBookingRequired:
+          type: boolean
+        accommodationRequired:
+          type: boolean
+        groundTransportRequired:
+          type: boolean
+        honorariumAmount:
+          type: string
+        honorariumPaid:
+          type: boolean
+        responsiblePerson:
+          type: [string, 'null']
+        thankYouSent:
+          type: boolean
+        thankYouDate:
+          type: [string, 'null']
+        sessionRecordingShared:
+          type: boolean
+        photoReleasedToMedia:
+          type: boolean
+        feedbackCollected:
+          type: boolean
+        feedbackScore:
+          type: [integer, 'null']
+    SpeakerEngagementInput:
+      type: object
+      required: [conveningId, speakerId]
+      properties:
+        conveningId:
+          type: string
+        speakerId:
+          type: string
+        invitationStatus:
+          type: string
+          enum: [Identified, Invited, Confirmed, Briefed, Ready, Attended, Thanked]
+        invitationResponse:
+          type: string
+          enum: [Accepted, Declined, Negotiating, NoResponse]
+        sessionType:
+          type: [string, 'null']
+          enum: [Keynote, Panelist, WorkshopLead, Chair, Breakaway, BusinessCircle, null]
+        sessionTitle:
+          type: [string, 'null']
+        sessionTheme:
+          type: [string, 'null']
+        sourcePartnerId:
+          type: [string, 'null']
+        sourceType:
+          type: string
+          enum: [Partner, External]
+        dueDate:
+          type: [string, 'null']
+        briefingDocsSent:
+          type: boolean
+        briefingDocsUrl:
+          type: [string, 'null']
+        logisticsConfirmed:
+          type: boolean
+        flightBookingRequired:
+          type: boolean
+        accommodationRequired:
+          type: boolean
+        groundTransportRequired:
+          type: boolean
+        honorariumAmount:
+          type: [string, number]
+        honorariumPaid:
+          type: boolean
+        responsiblePerson:
+          type: [string, 'null']
+        thankYouSent:
+          type: boolean
+        thankYouDate:
+          type: [string, 'null']
+        sessionRecordingShared:
+          type: boolean
+        photoReleasedToMedia:
+          type: boolean
+        feedbackCollected:
+          type: boolean
+        feedbackScore:
+          type: [integer, 'null']
+        pillarId:
+          type: [string, 'null']
+    SpeakerEngagementUpdate:
+      type: object
+      properties:
+        invitationStatus:
+          type: string
+          enum: [Identified, Invited, Confirmed, Briefed, Ready, Attended, Thanked]
+        invitationResponse:
+          type: string
+          enum: [Accepted, Declined, Negotiating, NoResponse]
+        sessionType:
+          type: [string, 'null']
+          enum: [Keynote, Panelist, WorkshopLead, Chair, Breakaway, BusinessCircle, null]
+        sessionTitle:
+          type: [string, 'null']
+        sessionTheme:
+          type: [string, 'null']
+        sourcePartnerId:
+          type: [string, 'null']
+        sourceType:
+          type: string
+          enum: [Partner, External]
+        dueDate:
+          type: [string, 'null']
+        briefingDocsSent:
+          type: boolean
+        briefingDocsUrl:
+          type: [string, 'null']
+        logisticsConfirmed:
+          type: boolean
+        flightBookingRequired:
+          type: boolean
+        accommodationRequired:
+          type: boolean
+        groundTransportRequired:
+          type: boolean
+        honorariumAmount:
+          type: [string, number]
+        honorariumPaid:
+          type: boolean
+        responsiblePerson:
+          type: [string, 'null']
+        thankYouSent:
+          type: boolean
+        thankYouDate:
+          type: [string, 'null']
+        sessionRecordingShared:
+          type: boolean
+        photoReleasedToMedia:
+          type: boolean
+        feedbackCollected:
+          type: boolean
+        feedbackScore:
+          type: [integer, 'null']
+        pillarId:
+          type: [string, 'null']
+
+    # ── Media Consent ────────────────────────────────────────────────────────
+    MediaConsent:
+      type: object
+      required: [id, speakerId, status]
+      properties:
+        id:
+          type: string
+        speakerId:
+          type: string
+        conveningId:
+          type: [string, 'null']
+        photographyConsent:
+          type: boolean
+        videoRecordingConsent:
+          type: boolean
+        liveStreamConsent:
+          type: boolean
+        nameAndBioPublication:
+          type: boolean
+        socialMediaUse:
+          type: boolean
+        thirdPartyMediaSharing:
+          type: boolean
+        status:
+          type: string
+          enum: [NotRequested, Pending, Granted, PartiallyGranted, Declined, Withdrawn]
+        capturedVia:
+          type: [string, 'null']
+          enum: [SelfService, AdminRecorded, 'null']
+        capturedAt:
+          type: [string, 'null']
+          format: date-time
+        withdrawnAt:
+          type: [string, 'null']
+          format: date-time
+        notes:
+          type: [string, 'null']
+    MediaConsentInput:
+      type: object
+      required: [speakerId, conveningId]
+      properties:
+        speakerId:
+          type: string
+        conveningId:
+          type: string
+        photographyConsent:
+          type: boolean
+        videoRecordingConsent:
+          type: boolean
+        liveStreamConsent:
+          type: boolean
+        nameAndBioPublication:
+          type: boolean
+        socialMediaUse:
+          type: boolean
+        thirdPartyMediaSharing:
+          type: boolean
+        status:
+          type: string
+          enum: [NotRequested, Pending, Granted, PartiallyGranted, Declined, Withdrawn]
+        capturedVia:
+          type: string
+          enum: [SelfService, AdminRecorded]
+        notes:
+          type: string
+    MediaConsentUpdate:
+      type: object
+      properties:
+        photographyConsent:
+          type: boolean
+        videoRecordingConsent:
+          type: boolean
+        liveStreamConsent:
+          type: boolean
+        nameAndBioPublication:
+          type: boolean
+        socialMediaUse:
+          type: boolean
+        thirdPartyMediaSharing:
+          type: boolean
+        status:
+          type: string
+          enum: [NotRequested, Pending, Granted, PartiallyGranted, Declined, Withdrawn]
+        capturedVia:
+          type: string
+          enum: [SelfService, AdminRecorded]
+        notes:
+          type: [string, 'null']
+
+    # ── Budget ───────────────────────────────────────────────────────────────
+    Budget:
+      type: object
+      required: [id, conveningId, category, committedAmount, actualAmount]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        type:
+          type: string
+          enum: [Income, Expense]
+        category:
+          type: string
+          enum: [Origination, Sponsorships, DelegatePasses, Operations, Marketing, Venue, Catering, AV, Travel, Contingency]
+        lineItemName:
+          type: [string, 'null']
+        units:
+          type: [number, 'null']
+        unitCost:
+          type: [number, 'null']
+        committedAmount:
+          type: number
+        actualAmount:
+          type: number
+        notes:
+          type: [string, 'null']
+        relatedPartnerId:
+          type: [string, 'null']
+    BudgetInput:
+      type: object
+      required: [conveningId, category]
+      properties:
+        conveningId:
+          type: string
+        type:
+          type: string
+          enum: [Income, Expense]
+        category:
+          type: string
+          enum: [Origination, Sponsorships, DelegatePasses, Operations, Marketing, Venue, Catering, AV, Travel, Contingency]
+        lineItemName:
+          type: string
+        units:
+          type: number
+        unitCost:
+          type: number
+        committedAmount:
+          type: number
+        actualAmount:
+          type: number
+        notes:
+          type: string
+        relatedPartnerId:
+          type: string
+    BudgetUpdate:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [Income, Expense]
+        category:
+          type: string
+          enum: [Origination, Sponsorships, DelegatePasses, Operations, Marketing, Venue, Catering, AV, Travel, Contingency]
+        lineItemName:
+          type: [string, 'null']
+        units:
+          type: [number, 'null']
+        unitCost:
+          type: [number, 'null']
+        committedAmount:
+          type: number
+        actualAmount:
+          type: number
+        notes:
+          type: [string, 'null']
+        relatedPartnerId:
+          type: [string, 'null']
+
+    # ── Workstreams ──────────────────────────────────────────────────────────
+    Workstream:
+      type: object
+      required: [id, conveningId, name, order, colorToken]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        name:
+          type: string
+        order:
+          type: integer
+        colorToken:
+          type: string
+        ownerUserId:
+          type: [string, 'null']
+        targetDate:
+          type: [string, 'null']
+          format: date
+    WorkstreamInput:
+      type: object
+      required: [conveningId, name]
+      properties:
+        conveningId:
+          type: string
+        name:
+          type: string
+        order:
+          type: integer
+        colorToken:
+          type: string
+        ownerUserId:
+          type: string
+        targetDate:
+          type: string
+          format: date
+    WorkstreamUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        order:
+          type: integer
+        colorToken:
+          type: string
+        ownerUserId:
+          type: [string, 'null']
+        targetDate:
+          type: [string, 'null']
+          format: date
+
+    # ── Tasks ────────────────────────────────────────────────────────────────
+    Task:
+      type: object
+      required: [id, conveningId, workstreamId, title, status, progressPct, isMilestone]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        workstreamId:
+          type: string
+        title:
+          type: string
+        description:
+          type: [string, 'null']
+        assignee:
+          type: [string, 'null']
+        dueDate:
+          type: [string, 'null']
+          format: date
+        startDate:
+          type: [string, 'null']
+          format: date
+        progressPct:
+          type: integer
+          minimum: 0
+          maximum: 100
+        isMilestone:
+          type: boolean
+        milestoneId:
+          type: [string, 'null']
+        milestoneName:
+          type: [string, 'null']
+        ownerUserId:
+          type: [string, 'null']
+        assigneeUserId:
+          type: [string, 'null']
+        assigneeName:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [NotStarted, InProgress, Blocked, Completed]
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent]
+    TaskInput:
+      type: object
+      required: [conveningId, workstreamId, title]
+      properties:
+        conveningId:
+          type: string
+        workstreamId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        assignee:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        startDate:
+          type: string
+          format: date
+        progressPct:
+          type: integer
+          minimum: 0
+          maximum: 100
+        isMilestone:
+          type: boolean
+        milestoneId:
+          type: string
+        ownerUserId:
+          type: string
+        assigneeUserId:
+          type: string
+        status:
+          type: string
+          enum: [NotStarted, InProgress, Blocked, Completed]
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent]
+    TaskUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: [string, 'null']
+        workstreamId:
+          type: string
+        assignee:
+          type: [string, 'null']
+        dueDate:
+          type: [string, 'null']
+          format: date
+        startDate:
+          type: [string, 'null']
+          format: date
+        progressPct:
+          type: integer
+          minimum: 0
+          maximum: 100
+        isMilestone:
+          type: boolean
+        milestoneId:
+          type: [string, 'null']
+        ownerUserId:
+          type: [string, 'null']
+        assigneeUserId:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [NotStarted, InProgress, Blocked, Completed]
+        priority:
+          type: string
+          enum: [Low, Medium, High, Urgent]
+
+    # ── Task Attachments ─────────────────────────────────────────────────────
+    TaskAttachment:
+      type: object
+      required: [id, taskId, conveningId, source, title, url, createdAt]
+      properties:
+        id:
+          type: string
+        taskId:
+          type: string
+        conveningId:
+          type: string
+        source:
+          type: string
+          enum: [Upload, GoogleDrive, Link]
+        title:
+          type: string
+        url:
+          type: string
+        contentType:
+          type: [string, 'null']
+        fileSize:
+          type: [integer, 'null']
+        createdByUserId:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+
+    TaskAttachmentInput:
+      type: object
+      required: [source, title, url]
+      properties:
+        source:
+          type: string
+          enum: [Upload, GoogleDrive, Link]
+        title:
+          type: string
+        url:
+          type: string
+        contentType:
+          type: string
+        fileSize:
+          type: integer
+
+    # ── Milestones ────────────────────────────────────────────────────────────
+    Milestone:
+      type: object
+      required: [id, conveningId, title, phase, status, sortOrder, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        title:
+          type: string
+        description:
+          type: [string, 'null']
+        phase:
+          type: string
+          enum: [PreEvent, EventDay, PostEvent]
+        targetDate:
+          type: [string, 'null']
+          format: date
+        owner:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [NotStarted, InProgress, Complete, AtRisk, Blocked]
+        dependency:
+          type: [string, 'null']
+        notes:
+          type: [string, 'null']
+        sortOrder:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: [string, 'null']
+          format: date-time
+
+    MilestoneInput:
+      type: object
+      required: [conveningId, title]
+      properties:
+        conveningId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        phase:
+          type: string
+          enum: [PreEvent, EventDay, PostEvent]
+        targetDate:
+          type: string
+          format: date
+        owner:
+          type: string
+        status:
+          type: string
+          enum: [NotStarted, InProgress, Complete, AtRisk, Blocked]
+        dependency:
+          type: string
+        notes:
+          type: string
+        sortOrder:
+          type: integer
+
+    MilestoneUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: [string, 'null']
+        phase:
+          type: string
+          enum: [PreEvent, EventDay, PostEvent]
+        targetDate:
+          type: [string, 'null']
+          format: date
+        owner:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [NotStarted, InProgress, Complete, AtRisk, Blocked]
+        dependency:
+          type: [string, 'null']
+        notes:
+          type: [string, 'null']
+        sortOrder:
+          type: integer
+
+    SpeakerSessionPlacement:
+      type: object
+      required: [sessionId, role, status]
+      properties:
+        sessionId:
+          type: string
+        sessionTitle:
+          type: [string, 'null']
+        day:
+          type: [string, 'null']
+        startTime:
+          type: [string, 'null']
+        role:
+          type: string
+        status:
+          type: string
+
+    ConveningTeamMember:
+      type: object
+      required: [id, conveningId, userId, projectRole, isLead, userName, openTasks, overdueTasks, completedTasks, totalTasks]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        userEmail:
+          type: [string, 'null']
+        projectRole:
+          type: string
+        isLead:
+          type: boolean
+        openTasks:
+          type: integer
+        overdueTasks:
+          type: integer
+        completedTasks:
+          type: integer
+        totalTasks:
+          type: integer
+
+    ConveningTeamMemberInput:
+      type: object
+      required: [userId, projectRole]
+      properties:
+        userId:
+          type: string
+        projectRole:
+          type: string
+        isLead:
+          type: boolean
+
+    # ── Agenda Sessions ──────────────────────────────────────────────────────
+    AgendaSession:
+      type: object
+      required: [id, conveningId, day, track, startTime, endTime, title, format, status, isSponsored, order, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        day:
+          type: string
+          format: date
+        track:
+          type: string
+        startTime:
+          type: string
+        endTime:
+          type: string
+        title:
+          type: string
+        theme:
+          type: [string, 'null']
+        format:
+          type: string
+          enum: [StandAlone, Fireside, Panel, Presentation, Breakaway, Break, Intermission]
+        status:
+          type: string
+          enum: [Proposed, Tentative, Confirmed]
+        chairSpeakerId:
+          type: [string, 'null']
+        pillarId:
+          type: [string, 'null']
+        sponsoredByEngagementId:
+          type: [string, 'null']
+        isSponsored:
+          type: boolean
+        description:
+          type: [string, 'null']
+        targetSpeakers:
+          type: integer
+        order:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        speakers:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionSpeakerEntry"
+    AgendaSessionInput:
+      type: object
+      required: [conveningId, day, startTime, endTime, title]
+      properties:
+        conveningId:
+          type: string
+        day:
+          type: string
+          format: date
+        track:
+          type: string
+        startTime:
+          type: string
+        endTime:
+          type: string
+        title:
+          type: string
+        theme:
+          type: string
+        format:
+          type: string
+          enum: [StandAlone, Fireside, Panel, Presentation, Breakaway, Break, Intermission]
+        status:
+          type: string
+          enum: [Proposed, Tentative, Confirmed]
+        chairSpeakerId:
+          type: string
+        pillarId:
+          type: string
+        sponsoredByEngagementId:
+          type: string
+        isSponsored:
+          type: boolean
+        description:
+          type: string
+        targetSpeakers:
+          type: integer
+        order:
+          type: integer
+    AgendaSessionUpdate:
+      type: object
+      properties:
+        day:
+          type: string
+          format: date
+        track:
+          type: string
+        startTime:
+          type: string
+        endTime:
+          type: string
+        title:
+          type: string
+        theme:
+          type: [string, 'null']
+        format:
+          type: string
+          enum: [StandAlone, Fireside, Panel, Presentation, Breakaway, Break, Intermission]
+        status:
+          type: string
+          enum: [Proposed, Tentative, Confirmed]
+        chairSpeakerId:
+          type: [string, 'null']
+        pillarId:
+          type: [string, 'null']
+        sponsoredByEngagementId:
+          type: [string, 'null']
+        isSponsored:
+          type: boolean
+        description:
+          type: [string, 'null']
+        targetSpeakers:
+          type: integer
+        order:
+          type: integer
+    SessionSpeakerEntry:
+      type: object
+      required: [id, sessionId, speakerId, role, status, order]
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        speakerId:
+          type: string
+        speakerName:
+          type: string
+        role:
+          type: string
+          enum: [Speaker, Panelist, Moderator, Chair]
+        status:
+          type: string
+          enum: [Proposed, Confirmed]
+        order:
+          type: integer
+    SessionSpeakerInput:
+      type: object
+      required: [speakerId]
+      properties:
+        speakerId:
+          type: string
+        role:
+          type: string
+          enum: [Speaker, Panelist, Moderator, Chair]
+        status:
+          type: string
+          enum: [Proposed, Confirmed]
+        order:
+          type: integer
+    SessionSpeakerPatch:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [Speaker, Panelist, Moderator, Chair]
+        status:
+          type: string
+          enum: [Proposed, Confirmed]
+
+    # ── Analytics ────────────────────────────────────────────────────────────
+    ReadinessCategory:
+      type: object
+      required: [label, score, weight]
+      properties:
+        label:
+          type: string
+        score:
+          type: number
+        weight:
+          type: number
+    ReadinessGate:
+      type: object
+      required: [label, passed, capsAt]
+      properties:
+        label:
+          type: string
+        passed:
+          type: boolean
+        capsAt:
+          type: number
+    ReadinessResult:
+      type: object
+      required: [score, rawScore, categories, gates]
+      properties:
+        score:
+          type: number
+        rawScore:
+          type: number
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReadinessCategory"
+        gates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReadinessGate"
+    FunnelStage:
+      type: object
+      required: [stage, count]
+      properties:
+        stage:
+          type: string
+        count:
+          type: integer
+    DiversitySlice:
+      type: object
+      required: [name, value]
+      properties:
+        name:
+          type: string
+        value:
+          type: integer
+    BudgetLine:
+      type: object
+      required: [category, committed, actual, variance]
+      properties:
+        category:
+          type: string
+        committed:
+          type: number
+        actual:
+          type: number
+        variance:
+          type: number
+    AnalyticsDashboard:
+      type: object
+      required: [convening, readiness, funnel, confirmation, diversity, budget]
+      properties:
+        convening:
+          type: object
+          required: [name, venueConfirmed, status]
+          properties:
+            name:
+              type: string
+            venueConfirmed:
+              type: boolean
+            status:
+              type: string
+            theme:
+              type: string
+              nullable: true
+            startDate:
+              type: string
+              nullable: true
+            endDate:
+              type: string
+              nullable: true
+            venueName:
+              type: string
+              nullable: true
+        readiness:
+          $ref: "#/components/schemas/ReadinessResult"
+        funnel:
+          type: array
+          items:
+            $ref: "#/components/schemas/FunnelStage"
+        confirmation:
+          type: object
+          required: [invited, confirmed]
+          properties:
+            invited:
+              type: integer
+            confirmed:
+              type: integer
+        diversity:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiversitySlice"
+        sessionTypes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiversitySlice"
+        budget:
+          type: array
+          items:
+            $ref: "#/components/schemas/BudgetLine"
+        registration:
+          $ref: "#/components/schemas/RegistrationAnalytics"
+        demographics:
+          $ref: "#/components/schemas/DelegatesDemographics"
+
+    # ── Service Providers ─────────────────────────────────────────────────
+    ServiceProvider:
+      type: object
+      required: [id, company, category, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+          nullable: true
+        company:
+          type: string
+        category:
+          type: string
+        contactPerson:
+          type: string
+          nullable: true
+        contactPhone:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+    ServiceProviderInput:
+      type: object
+      required: [conveningId, company, category]
+      properties:
+        conveningId:
+          type: string
+        company:
+          type: string
+        category:
+          type: string
+        contactPerson:
+          type: string
+          nullable: true
+        contactPhone:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+    ProviderBooking:
+      type: object
+      required: [id, conveningId, serviceProviderId, procurementStatus, currency, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        serviceProviderId:
+          type: string
+        providerProfile:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ServiceProvider"
+        procurementStatus:
+          type: string
+        estimatedCost:
+          type: number
+          nullable: true
+        currency:
+          type: string
+        contractUrl:
+          type: string
+          nullable: true
+        responsiblePerson:
+          type: string
+          nullable: true
+        scheduledStart:
+          type: string
+          nullable: true
+        scheduledEnd:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+    ProviderBookingInput:
+      type: object
+      required: [conveningId, serviceProviderId, procurementStatus, currency]
+      properties:
+        conveningId:
+          type: string
+        serviceProviderId:
+          type: string
+        procurementStatus:
+          type: string
+        estimatedCost:
+          type: number
+          nullable: true
+        currency:
+          type: string
+        contractUrl:
+          type: string
+          nullable: true
+        responsiblePerson:
+          type: string
+          nullable: true
+        scheduledStart:
+          type: string
+          nullable: true
+        scheduledEnd:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+    ProviderBookingWithProvider:
+      allOf:
+        - $ref: "#/components/schemas/ProviderBooking"
+        - type: object
+          properties:
+            provider:
+              $ref: "#/components/schemas/ServiceProvider"
+
+    # ── Deal Room ─────────────────────────────────────────────────────────────
+    SuggestMatchesInput:
+      type: object
+      required: [conveningId]
+      properties:
+        conveningId:
+          type: string
+    DealMatchUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [Suggested, Accepted, Declined]
+    DealProject:
+      type: object
+      required: [id, conveningId, name, side, stage, currency, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        name:
+          type: string
+        side:
+          type: string
+          enum: [CapitalSeeking, CapitalProvider, Offtaker, Supplier]
+        sector:
+          type: [string, 'null']
+        ticketSizeMin:
+          type: [number, 'null']
+        ticketSizeMax:
+          type: [number, 'null']
+        currency:
+          type: string
+        description:
+          type: [string, 'null']
+        contactPerson:
+          type: [string, 'null']
+        contactEmail:
+          type: [string, 'null']
+        originator:
+          type: [string, 'null']
+        partnerId:
+          type: [string, 'null']
+        bankabilityScore:
+          type: [integer, 'null']
+        stage:
+          type: string
+          enum: [Preliminary, PreFeasibility, Feasibility, CommercialClose, PartFinance, Refinance, Closed, Stalled]
+        projectStage:
+          type: [string, 'null']
+          enum: [Concept, Prefeasibility, Feasibility, Bankable, Construction, Operational, 'null']
+        registrationStatus:
+          type: [string, 'null']
+          enum: [Registered, Pending, NotRequired, Expired, 'null']
+        licensingStatus:
+          type: [string, 'null']
+          enum: [Licensed, Pending, NotRequired, Expired, 'null']
+        createdAt:
+          type: string
+          format: date-time
+    DealProjectInput:
+      type: object
+      required: [conveningId, name, side]
+      properties:
+        conveningId:
+          type: string
+        name:
+          type: string
+        side:
+          type: string
+          enum: [CapitalSeeking, CapitalProvider, Offtaker, Supplier]
+        sector:
+          type: string
+        ticketSizeMin:
+          type: number
+        ticketSizeMax:
+          type: number
+        currency:
+          type: string
+        description:
+          type: string
+        contactPerson:
+          type: string
+        contactEmail:
+          type: string
+        originator:
+          type: string
+        partnerId:
+          type: string
+        bankabilityScore:
+          type: integer
+        projectStage:
+          type: string
+          enum: [Concept, Prefeasibility, Feasibility, Bankable, Construction, Operational]
+        registrationStatus:
+          type: string
+          enum: [Registered, Pending, NotRequired, Expired]
+        licensingStatus:
+          type: string
+          enum: [Licensed, Pending, NotRequired, Expired]
+    DealProjectUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        side:
+          type: string
+          enum: [CapitalSeeking, CapitalProvider, Offtaker, Supplier]
+        sector:
+          type: [string, 'null']
+        ticketSizeMin:
+          type: [number, 'null']
+        ticketSizeMax:
+          type: [number, 'null']
+        description:
+          type: [string, 'null']
+        contactPerson:
+          type: [string, 'null']
+        contactEmail:
+          type: [string, 'null']
+        originator:
+          type: [string, 'null']
+        partnerId:
+          type: [string, 'null']
+        bankabilityScore:
+          type: [integer, 'null']
+        stage:
+          type: string
+          enum: [Preliminary, PreFeasibility, Feasibility, CommercialClose, PartFinance, Refinance, Closed, Stalled]
+        projectStage:
+          type: [string, 'null']
+          enum: [Concept, Prefeasibility, Feasibility, Bankable, Construction, Operational, 'null']
+        registrationStatus:
+          type: [string, 'null']
+          enum: [Registered, Pending, NotRequired, Expired, 'null']
+        licensingStatus:
+          type: [string, 'null']
+          enum: [Licensed, Pending, NotRequired, Expired, 'null']
+    DealMatch:
+      type: object
+      required: [id, conveningId, projectAId, projectBId, matchScore, status, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        projectAId:
+          type: string
+        projectBId:
+          type: string
+        matchScore:
+          type: integer
+        rationale:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [Suggested, Accepted, Declined]
+        createdAt:
+          type: string
+          format: date-time
+    DealMatchWithProjects:
+      allOf:
+        - $ref: "#/components/schemas/DealMatch"
+        - type: object
+          properties:
+            projectA:
+              $ref: "#/components/schemas/DealProject"
+            projectB:
+              $ref: "#/components/schemas/DealProject"
+    DealMeeting:
+      type: object
+      required: [id, conveningId, projectAId, projectBId, status, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        projectAId:
+          type: string
+        projectBId:
+          type: string
+        scheduledAt:
+          type: [string, 'null']
+        room:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [Proposed, Confirmed, Held, NoShow]
+        notes:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+    DealMeetingInput:
+      type: object
+      required: [conveningId, projectAId, projectBId]
+      properties:
+        conveningId:
+          type: string
+        projectAId:
+          type: string
+        projectBId:
+          type: string
+        scheduledAt:
+          type: string
+        room:
+          type: string
+        status:
+          type: string
+          enum: [Proposed, Confirmed, Held, NoShow]
+        notes:
+          type: string
+    DealMeetingUpdate:
+      type: object
+      properties:
+        scheduledAt:
+          type: [string, 'null']
+        room:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [Proposed, Confirmed, Held, NoShow]
+        notes:
+          type: [string, 'null']
+
+    DealCommitment:
+      type: object
+      required: [id, conveningId, title, type, value, currency, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+          enum: [LOI, MoU, TermSheet, Investment]
+        value:
+          type: number
+        currency:
+          type: string
+        partiesText:
+          type: [string, 'null']
+        signedAt:
+          type: [string, 'null']
+        dealProjectId:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+    DealCommitmentInput:
+      type: object
+      required: [conveningId, title, type]
+      properties:
+        conveningId:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+          enum: [LOI, MoU, TermSheet, Investment]
+        value:
+          type: number
+        currency:
+          type: string
+        partiesText:
+          type: string
+        signedAt:
+          type: string
+        dealProjectId:
+          type: string
+
+    # ── Outcomes ──────────────────────────────────────────────────────────────
+    Commitment:
+      type: object
+      required: [id, conveningId, title, category, source, status, inAideMemoire, publishedToScorecard, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        title:
+          type: string
+        description:
+          type: [string, 'null']
+        category:
+          type: string
+          enum: [Policy, Investment, Skills, Innovation, ESG, Inclusion, Governance]
+        ownerName:
+          type: [string, 'null']
+        ownerOrg:
+          type: [string, 'null']
+        source:
+          type: string
+          enum: [BusinessCircle, DealRoom, Plenary, Roundtable]
+        sourceSessionId:
+          type: [string, 'null']
+        dueDate:
+          type: [string, 'null']
+          format: date
+        status:
+          type: string
+          enum: [Proposed, Agreed, InProgress, Delivered, Stalled]
+        inAideMemoire:
+          type: boolean
+        publishedToScorecard:
+          type: boolean
+        originEdition:
+          type: [string, 'null']
+        progressNote:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+    CommitmentInput:
+      type: object
+      required: [conveningId, title, category]
+      properties:
+        conveningId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+          enum: [Policy, Investment, Skills, Innovation, ESG, Inclusion, Governance]
+        ownerName:
+          type: string
+        ownerOrg:
+          type: string
+        source:
+          type: string
+          enum: [BusinessCircle, DealRoom, Plenary, Roundtable]
+        sourceSessionId:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [Proposed, Agreed, InProgress, Delivered, Stalled]
+        inAideMemoire:
+          type: boolean
+        publishedToScorecard:
+          type: boolean
+        originEdition:
+          type: string
+        progressNote:
+          type: string
+    CommitmentUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: [string, 'null']
+        category:
+          type: string
+          enum: [Policy, Investment, Skills, Innovation, ESG, Inclusion, Governance]
+        ownerName:
+          type: [string, 'null']
+        ownerOrg:
+          type: [string, 'null']
+        source:
+          type: string
+          enum: [BusinessCircle, DealRoom, Plenary, Roundtable]
+        dueDate:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [Proposed, Agreed, InProgress, Delivered, Stalled]
+        inAideMemoire:
+          type: boolean
+        publishedToScorecard:
+          type: boolean
+        progressNote:
+          type: [string, 'null']
+    Scorecard:
+      type: object
+      required: [headline, signedDealValue, signedDealCount, categories]
+      properties:
+        headline:
+          type: object
+          required: [total, delivered, deliveryRatePct]
+          properties:
+            total:
+              type: integer
+            delivered:
+              type: integer
+            deliveryRatePct:
+              type: integer
+        signedDealValue:
+          type: number
+        signedDealCount:
+          type: integer
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              category:
+                type: string
+              total:
+                type: integer
+              delivered:
+                type: integer
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    title:
+                      type: string
+                    owner:
+                      type: [string, 'null']
+                    status:
+                      type: string
+                    originEdition:
+                      type: [string, 'null']
+
+    # ── Documents & Templates ─────────────────────────────────────────────────
+    ConveningDocument:
+      type: object
+      required: [id, type, title, url, version, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: [string, 'null']
+        type:
+          type: string
+          enum: [Deck, GuidingDoc, Prospectus, Report, AideMemoire, Communique, Contract, Other]
+        title:
+          type: string
+        url:
+          type: string
+        version:
+          type: integer
+        notes:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+    ConveningDocumentInput:
+      type: object
+      required: [conveningId, type, title, url]
+      properties:
+        conveningId:
+          type: string
+        type:
+          type: string
+          enum: [Deck, GuidingDoc, Prospectus, Report, AideMemoire, Communique, Contract, Other]
+        title:
+          type: string
+        url:
+          type: string
+        version:
+          type: integer
+        notes:
+          type: string
+    OutreachTemplate:
+      type: object
+      required: [id, name, category, scope, bodyMarkdown, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+          enum: [PartnerLetter, SponsorLetter, PensionFundLetter, AdvisoryBoardConceptNote, AdvisoryBoardInvitation, SteeringCommitteeConceptNote, Other]
+        scope:
+          type: string
+          enum: [Global, Convening]
+        conveningId:
+          type: [string, 'null']
+        bodyMarkdown:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    OutreachTemplateInput:
+      type: object
+      required: [conveningId, name, category, bodyMarkdown]
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+          enum: [PartnerLetter, SponsorLetter, PensionFundLetter, AdvisoryBoardConceptNote, AdvisoryBoardInvitation, SteeringCommitteeConceptNote, Other]
+        scope:
+          type: string
+          enum: [Global, Convening]
+        conveningId:
+          type: string
+        bodyMarkdown:
+          type: string
+
+    ConveningDocumentUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        notes:
+          type: string
+        version:
+          type: integer
+        url:
+          type: string
+
+    UploadUrlRequest:
+      type: object
+      required: [conveningId, name, size, contentType]
+      properties:
+        conveningId:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+        size:
+          type: integer
+          minimum: 1
+        contentType:
+          type: string
+          minLength: 1
+
+    UploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath, metadata]
+      properties:
+        uploadURL:
+          type: string
+          format: uri
+        objectPath:
+          type: string
+        metadata:
+          type: object
+          required: [name, size, contentType]
+          properties:
+            name:
+              type: string
+            size:
+              type: number
+            contentType:
+              type: string
+
+    # ── Delegates ──────────────────────────────────────────────────────────
+    Delegate:
+      type: object
+      required: [id, conveningId, name, passType, status, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        name:
+          type: string
+        jobTitle:
+          type: [string, 'null']
+        organization:
+          type: [string, 'null']
+        email:
+          type: [string, 'null']
+        country:
+          type: [string, 'null']
+        segment:
+          type: [string, 'null']
+        passType:
+          type: string
+          enum: [Paid, EarlyBird, Standard, Late, FreeSponsor, FreeComp, Speaker, Press, Official, VIP]
+        status:
+          type: string
+          enum: [Registered, Confirmed, Attended, Cancelled, Waitlisted]
+        gender:
+          type: [string, 'null']
+          enum: [Female, Male, Other, Undisclosed, null]
+        ageBand:
+          type: [string, 'null']
+          enum: [Under35, Age35to50, Over50, Undisclosed, null]
+        aum:
+          type: [number, 'null']
+        notes:
+          type: [string, 'null']
+        qrCode:
+          type: string
+        dietaryRequirements:
+          type: [string, 'null']
+        accessNeeds:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+
+    DelegateCheckInInput:
+      type: object
+      required: [qrCode]
+      properties:
+        qrCode:
+          type: string
+
+    DelegateVerifyResponse:
+      type: object
+      required: [id, name, passType, status, qrCode]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        jobTitle:
+          type: [string, 'null']
+        organization:
+          type: [string, 'null']
+        segment:
+          type: [string, 'null']
+        country:
+          type: [string, 'null']
+        passType:
+          type: string
+          enum: [Paid, EarlyBird, Standard, Late, FreeSponsor, FreeComp, Speaker, Press, Official, VIP]
+        status:
+          type: string
+          enum: [Registered, Confirmed, Attended, Cancelled, Waitlisted]
+        qrCode:
+          type: string
+
+    DelegateInput:
+      type: object
+      required: [conveningId, name]
+      properties:
+        conveningId:
+          type: string
+        name:
+          type: string
+        jobTitle:
+          type: string
+          nullable: true
+        organization:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        segment:
+          type: string
+          nullable: true
+        passType:
+          type: string
+          enum: [Paid, EarlyBird, Standard, Late, FreeSponsor, FreeComp, Speaker, Press, Official, VIP]
+        status:
+          type: string
+          enum: [Registered, Confirmed, Attended, Cancelled, Waitlisted]
+        gender:
+          type: string
+          enum: [Female, Male, Other, Undisclosed]
+          nullable: true
+        ageBand:
+          type: string
+          enum: [Under35, Age35to50, Over50, Undisclosed]
+          nullable: true
+        aum:
+          type: number
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        dietaryRequirements:
+          type: string
+          nullable: true
+        accessNeeds:
+          type: string
+          nullable: true
+
+    DelegateUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        jobTitle:
+          type: string
+          nullable: true
+        organization:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        segment:
+          type: string
+          nullable: true
+        passType:
+          type: string
+          enum: [Paid, EarlyBird, Standard, Late, FreeSponsor, FreeComp, Speaker, Press, Official, VIP]
+        status:
+          type: string
+          enum: [Registered, Confirmed, Attended, Cancelled, Waitlisted]
+        gender:
+          type: string
+          enum: [Female, Male, Other, Undisclosed]
+          nullable: true
+        ageBand:
+          type: string
+          enum: [Under35, Age35to50, Over50, Undisclosed]
+          nullable: true
+        aum:
+          type: number
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        dietaryRequirements:
+          type: string
+          nullable: true
+        accessNeeds:
+          type: string
+          nullable: true
+
+    DelegateExportSchedule:
+      type: object
+      required: [id, conveningId, enabled, timeOfDay, recipients, passTypeCategory, daysOfWeek, createdByUserId, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        enabled:
+          type: boolean
+        timeOfDay:
+          type: string
+          description: 24h HH:mm in UTC
+        recipients:
+          type: array
+          items:
+            type: string
+        segment:
+          type: [string, 'null']
+        passTypeCategory:
+          type: string
+          enum: [All, Paying, Comp]
+        daysOfWeek:
+          type: array
+          items:
+            type: integer
+          description: Days of the week to run (0=Sun … 6=Sat). Empty array means every day.
+        columns:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Ordered list of column keys to include in the export. Null means all default columns.
+        createdByUserId:
+          type: string
+        lastRunAt:
+          type: [string, 'null']
+          format: date-time
+        lastStatus:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DelegateExportScheduleInput:
+      type: object
+      required: [conveningId, enabled, timeOfDay, recipients, passTypeCategory, daysOfWeek]
+      properties:
+        conveningId:
+          type: string
+        enabled:
+          type: boolean
+        timeOfDay:
+          type: string
+          description: 24h HH:mm in UTC
+        recipients:
+          type: array
+          items:
+            type: string
+        segment:
+          type: string
+          nullable: true
+        passTypeCategory:
+          type: string
+          enum: [All, Paying, Comp]
+        daysOfWeek:
+          type: array
+          items:
+            type: integer
+          description: Days of the week to run (0=Sun … 6=Sat). Empty array means every day.
+        columns:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Ordered list of column keys to include in the export. Null means all default columns.
+
+    RegistrationAnalytics:
+      type: object
+      required: [total, target, statusBreakdown, passMix, byConstituency, countriesCount, totalAum]
+      properties:
+        total:
+          type: integer
+        target:
+          type: integer
+        statusBreakdown:
+          type: array
+          items:
+            type: object
+            required: [status, count]
+            properties:
+              status:
+                type: string
+              count:
+                type: integer
+        passMix:
+          type: array
+          items:
+            type: object
+            required: [type, count]
+            properties:
+              type:
+                type: string
+              count:
+                type: integer
+        byConstituency:
+          type: array
+          items:
+            type: object
+            required: [segment, count]
+            properties:
+              segment:
+                type: string
+              count:
+                type: integer
+        countriesCount:
+          type: integer
+        totalAum:
+          type: number
+
+    DelegatesDemographics:
+      type: object
+      required: [total, countriesRepresented, byCountry, byGender, byAgeBand, byConstituency, declaredRates]
+      properties:
+        total:
+          type: integer
+        countriesRepresented:
+          type: integer
+        byCountry:
+          type: object
+          additionalProperties:
+            type: integer
+        byGender:
+          type: object
+          additionalProperties:
+            type: integer
+        byAgeBand:
+          type: object
+          additionalProperties:
+            type: integer
+        byConstituency:
+          type: object
+          additionalProperties:
+            type: integer
+        declaredRates:
+          type: object
+          required: [genderPct, agePct]
+          properties:
+            genderPct:
+              type: integer
+            agePct:
+              type: integer
+
+    Exhibitor:
+      type: object
+      required: [id, conveningId, company, contractStatus, feeAmount, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        company:
+          type: string
+        sector:
+          type: string
+          nullable: true
+        contactPerson:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+        contactPhone:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        logoUrl:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        contractStatus:
+          type: string
+          enum: [Prospect, Contracted, Paid]
+        feeAmount:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+
+    Booth:
+      type: object
+      required: [id, conveningId, code, zone, tier, sizeSqm, price, status, posX, posY, width, height, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        code:
+          type: string
+        zone:
+          type: string
+        tier:
+          type: string
+          enum: [Premium, Standard, Startup]
+        sizeSqm:
+          type: number
+        price:
+          type: number
+        status:
+          type: string
+          enum: [Available, Reserved, Booked]
+        posX:
+          type: number
+        posY:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+        exhibitorId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    ExhibitorInput:
+      type: object
+      required: [conveningId, company]
+      properties:
+        conveningId:
+          type: string
+        company:
+          type: string
+        sector:
+          type: string
+        contactPerson:
+          type: string
+        contactEmail:
+          type: string
+        contactPhone:
+          type: string
+        url:
+          type: string
+        logoUrl:
+          type: string
+        description:
+          type: string
+        contractStatus:
+          type: string
+          enum: [Prospect, Contracted, Paid]
+        feeAmount:
+          type: number
+
+    ExhibitorUpdate:
+      type: object
+      properties:
+        company:
+          type: string
+        sector:
+          type: string
+        contactPerson:
+          type: string
+        contactEmail:
+          type: string
+        contactPhone:
+          type: string
+        url:
+          type: string
+        logoUrl:
+          type: string
+        description:
+          type: string
+        contractStatus:
+          type: string
+          enum: [Prospect, Contracted, Paid]
+        feeAmount:
+          type: number
+
+    BoothInput:
+      type: object
+      required: [conveningId, code, zone]
+      properties:
+        conveningId:
+          type: string
+        code:
+          type: string
+        zone:
+          type: string
+        tier:
+          type: string
+          enum: [Premium, Standard, Startup]
+        sizeSqm:
+          type: number
+        price:
+          type: number
+        status:
+          type: string
+          enum: [Available, Reserved, Booked]
+        posX:
+          type: number
+        posY:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+        exhibitorId:
+          type: string
+
+    BoothUpdate:
+      type: object
+      properties:
+        code:
+          type: string
+        zone:
+          type: string
+        tier:
+          type: string
+          enum: [Premium, Standard, Startup]
+        sizeSqm:
+          type: number
+        price:
+          type: number
+        status:
+          type: string
+          enum: [Available, Reserved, Booked]
+        posX:
+          type: number
+        posY:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+        exhibitorId:
+          type: string
+          nullable: true
+
+    # ── Sponsorship packages ──────────────────────────────────────────────────
+    SponsorshipPackage:
+      type: object
+      required: [id, conveningId, tier, price, slots, perks, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        tier:
+          type: string
+          enum: [Platinum, Gold, Silver, CredibilityOnly, InKind]
+        price:
+          type: number
+        slots:
+          type: integer
+        description:
+          type: [string, 'null']
+        perks:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    SponsorshipPackageInput:
+      type: object
+      required: [conveningId, tier]
+      properties:
+        conveningId:
+          type: string
+        tier:
+          type: string
+          enum: [Platinum, Gold, Silver, CredibilityOnly, InKind]
+        price:
+          type: number
+        slots:
+          type: integer
+        description:
+          type: string
+        perks:
+          type: array
+          items:
+            type: string
+
+    SponsorshipPackageUpdate:
+      type: object
+      properties:
+        tier:
+          type: string
+          enum: [Platinum, Gold, Silver, CredibilityOnly, InKind]
+        price:
+          type: number
+        slots:
+          type: integer
+        description:
+          type: [string, 'null']
+        perks:
+          type: array
+          items:
+            type: string
+
+    # ── Budget email export ────────────────────────────────────────────────────
+    BudgetEmailExportInput:
+      type: object
+      required: [conveningId, recipients]
+      properties:
+        conveningId:
+          type: string
+        recipients:
+          type: array
+          items:
+            type: string
+            format: email
+          minItems: 1
+          maxItems: 20
+        message:
+          type: [string, 'null']
+          maxLength: 2000
+        currency:
+          type: [string, 'null']
+          description: "3-letter currency code (e.g. USD, KES)"
+
+    # ── Budget sync ────────────────────────────────────────────────────────────
+    BudgetSyncInput:
+      type: object
+      required: [conveningId]
+      properties:
+        conveningId:
+          type: string
+
+    BudgetSyncResult:
+      type: object
+      required: [sponsorLines, delegateLines, sponsorCompByTier]
+      properties:
+        sponsorLines:
+          type: integer
+          description: Number of sponsorship budget lines upserted
+        delegateLines:
+          type: integer
+          description: Number of delegate revenue budget lines upserted
+        sponsorCompByTier:
+          type: array
+          items:
+            $ref: "#/components/schemas/SponsorCompTierRow"
+          description: Per-tier comp-pass allocation vs issued counts (from engagements.delegatePassesAllocated)
+
+    SponsorCompTierRow:
+      type: object
+      required: [tier, allocated, issued]
+      properties:
+        tier:
+          type: string
+          description: Sponsor tier label (e.g. Platinum, Gold) or "Untiered"
+        allocated:
+          type: integer
+          description: Total delegatePassesAllocated across all engagements with this tier
+        issued:
+          type: integer
+          description: Number of FreeSponsor delegates currently confirmed for this tier
+
+    SponsorCompSummary:
+      type: object
+      required: [byTier, totalAllocated, totalIssued]
+      properties:
+        byTier:
+          type: array
+          items:
+            $ref: "#/components/schemas/SponsorCompTierRow"
+        totalAllocated:
+          type: integer
+        totalIssued:
+          type: integer
+
+    # ── Pass type configs ─────────────────────────────────────────────────────
+    PassTypeConfig:
+      type: object
+      required: [id, conveningId, passType, label, price, capacity, createdAt]
+      properties:
+        id:
+          type: string
+        conveningId:
+          type: string
+        passType:
+          type: string
+          enum: [Paid, EarlyBird, Standard, Late, FreeSponsor, FreeComp, Speaker, Press, Official, VIP]
+        label:
+          type: string
+        price:
+          type: number
+        capacity:
+          type: integer
+        description:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+
+    PassTypeConfigInput:
+      type: object
+      required: [conveningId, passType, label]
+      properties:
+        conveningId:
+          type: string
+        passType:
+          type: string
+          enum: [Paid, EarlyBird, Standard, Late, FreeSponsor, FreeComp, Speaker, Press, Official, VIP]
+        label:
+          type: string
+        price:
+          type: number
+        capacity:
+          type: integer
+        description:
+          type: string
+
+    CopyPassTypeConfigsInput:
+      type: object
+      required: [sourceConveningId, targetConveningId]
+      properties:
+        sourceConveningId:
+          type: string
+        targetConveningId:
+          type: string
+
+    PassTypeConfigUpdate:
+      type: object
+      properties:
+        passType:
+          type: string
+          enum: [Paid, EarlyBird, Standard, Late, FreeSponsor, FreeComp, Speaker, Press, Official, VIP]
+        label:
+          type: string
+        price:
+          type: number
+        capacity:
+          type: integer
+        description:
+          type: [string, 'null']
+    AuditLog:
+      type: object
+      required: [id, createdAt, action, entityType, entityId, actorUserId]
+      properties:
+        id:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        action:
+          type: string
+          enum: [Create, Update, Delete, Restore, Export]
+        entityType:
+          type: string
+        entityId:
+          type: string
+        summary:
+          type: [string, 'null']
+        actorUserId:
+          type: string
+        conveningId:
+          type: [string, 'null']
+        before:
+          type: [object, 'null']
+          additionalProperties: true
+        after:
+          type: [object, 'null']
+          additionalProperties: true
+
+    InviteRecord:
+      type: object
+      required: [id, token, email, role, accountType, expiresAt, createdAt]
+      properties:
+        id:
+          type: string
+        token:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        accountType:
+          type: string
+        conveningId:
+          type: [string, 'null']
+        allowedSections:
+          type: [array, 'null']
+          items:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+        usedAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        createdByUserId:
+          type: [string, 'null']
+
+    InviteInput:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+        conveningId:
+          type: string
+        allowedSections:
+          type: array
+          items:
+            type: string

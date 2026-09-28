@@ -1,0 +1,87 @@
+# Keep source under artifacts/{api-server,portal,mockup-sandbox}/ tracked.
+# Also keep package/config files, schema, seed source and pnpm-lock.yaml tracked.
+
+# Secrets and local credentials (the blank template is intentionally tracked)
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+credentials.json
+service-account*.json
+
+# Dependencies, build output and generated caches
+node_modules/
+dist/
+build/
+out/
+out-tsc/
+.next/
+.nuxt/
+.vite/
+.turbo/
+.expo/
+.expo-shared/
+*.tsbuildinfo
+.tsbuildinfo
+*.map
+tmp/
+temp/
+.cache/
+.local/
+.config/
+.upm/
+.sass-cache/
+coverage/
+.nyc_output/
+
+# Local data, exports and uploaded reference artifacts (not app public assets)
+attached_assets/
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+*.zip
+*.tar
+*.tar.gz
+
+# Private QA outputs, recordings, screenshots and logs
+playwright-report/
+test-results/
+__screenshots__/
+screenshots/
+private-qa/
+*.screenshot.png
+*.screenshot.jpg
+Screenshot_*
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editors, system files and local agent state
+/.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+.agents/
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md

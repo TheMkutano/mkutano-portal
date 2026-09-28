@@ -1,0 +1,236 @@
+MKUTANO BRAND — VISUAL STANDARDS
+Skill name: mkutano-brand
+Description: McKinsey-influenced design system. Clean, authoritative, data-first.
+Verified against portal CSS tokens in artifacts/portal/src/index.css.
+No gradients, no 3D, no decorative noise.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COLOUR PALETTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PRIMARY
+  Navy    #0A2F5C   Headlines, primary bars, sidebar/nav background, key callouts
+  Blue    #2A6FB0   Primary interactive, buttons, data series 1, in-progress status
+  Accent  #1B9DD9   Links, hover highlights, accent borders (portal-specific)
+
+NEUTRALS
+  Ink     #0F1F33   Body text, axis labels
+  Slate   #5A6472   Secondary text, captions, muted labels
+  Border  #E3E8EE   Gridlines, cell borders, dividers
+  Page BG #F6F8FB   Page background
+  Tint    #EEF3F9   Hover backgrounds, active row highlights, selected states
+  White   #FFFFFF   Card surfaces, canvas background
+
+SEMANTIC / STATUS
+  Positive / Completed    #2E7D5B   (emerald green)  --variance-fav / --status-completed
+  Negative / Blocked      #B5462F   (brick red)      --variance-adv / --status-blocked
+  In Progress             #2A6FB0   (same as primary) --status-inprogress
+  Not Started             #9AA4B0   (muted gray)     --status-notstarted
+
+CHART DATA SERIES (in order)
+  1. #2A6FB0  Blue (primary)
+  2. #1B9DD9  Accent / Cerulean
+  3. #5B9BD5  Sky (supporting)
+  4. #0A2F5C  Navy (emphasis)
+  5. #9DB8D2  Pale Blue (background series)
+  6. #E3E8EE  Cloud (ghost / reference series)
+
+  Never use more than 4 series without a legend.
+  Never use red/green together as primary data colours (accessibility).
+
+ACCENT (use sparingly — one per visual max)
+  Teal   #00838F   Positive highlight in charts/infographics
+  Amber  #E8820C   Warning, negative variance in charts
+  Coral  #C0392B   Alert, critical negative in charts
+  Sage   #5D8A5E   Secondary positive in charts
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPOGRAPHY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Font: Inter (Google Fonts, weights 400 / 500 / 600 / 700)
+CSS vars: --app-font-sans / --app-font-heading: 'Inter', sans-serif
+
+PORTAL TYPE RAMP (CRM pages)
+  Page title          22px  600   Never text-3xl font-bold or text-2xl
+  Section heading     14px  600
+  Body                13px  400
+  Table header/caption 11px 500   Uppercase, --brand-text-secondary colour
+  Numbers             any   —     Always tabular-nums
+
+CHART / INFOGRAPHIC TYPE RAMP
+  Chart title         14–16px  600  Sentence case
+  Axis title          11–12px  600  ALL CAPS
+  Axis/tick label     10–11px  400  Sentence case
+  Data label          11px     500  Sentence case
+  Table header        11px     600  ALL CAPS
+  Table body          12px     400  Sentence case
+  Caption/footnote    10px     400  Sentence case
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TIER BADGES (portal — tonal, never solid)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Platinum   bg #EEF1F6   text #0A2F5C
+  Gold       bg #FBF3E2   text #8A6516
+  Silver     bg #F0F2F4   text #5A6472
+  Bronze     bg #F5EDE4   text #7A4C2C
+
+  NEVER: bg-gray-900 text-white or bg-amber-600 text-white
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VARIANCE SEMANTICS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Income rows:  var = actual − committed  (actual > budget = good = green)
+  Expense rows: var = committed − actual  (underspend = good = green)
+  Sign must agree with colour: positive = #2E7D5B, negative = #B5462F
+  Net P&L KPI: show "—" if income list or expense list is empty
+  Net P&L row: only render when both income and expense lists are non-empty
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CHARTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BAR CHARTS
+  • Bars: #2A6FB0, 80% bar-width
+  • Value labels: directly on bar (end), 11px, #0F1F33
+  • Horizontal gridlines only, #E3E8EE 1px
+  • Negative bars: #B5462F; label with minus sign (no brackets)
+  • Totals/subtotals: Navy #0A2F5C
+  • Connector lines: #C2C8CC dashed 1px
+
+LINE CHARTS
+  • Line weight: 2px primary, 1.5px secondary
+  • Markers: circle, 5px diameter, filled, only at data points
+  • Shaded area under line: 15% opacity of line colour
+  • Use dashed/dotted before adding a 5th colour
+
+DONUT / PIE CHARTS
+  • Use only for part-to-whole with ≤5 segments
+  • Prefer bar chart for comparisons
+  • Donut inner radius: 55%
+  • Label segments >5% directly; group smaller as "Other"
+
+SCATTER / DOT PLOTS
+  • Dot size: 8–12px
+  • Reference lines: dashed #5A6472, 1px, labelled
+  • Quadrant labels: #5A6472, italic
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DIAGRAMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PROCESS FLOW
+  • Box: rounded 4px, #F0F4F8 fill, #C2C8CC stroke 1px
+  • Active box: Navy #0A2F5C fill, white text
+  • Arrows: #5A6472, 1.5px solid, filled arrowhead
+  • Font: Inter Regular 11px, Ink #0F1F33
+
+2×2 MATRIX
+  • Quadrant lines: #C2C8CC, 1px dashed
+  • Quadrant labels: top corners, Slate #5A6472, 11px semibold
+  • Axis titles: Ink #0F1F33, 12px semibold, ALL CAPS
+  • Dots: Navy filled circles
+
+ORG CHART / TREE
+  • Node: white fill, #2A6FB0 border 1.5px, rounded 4px
+  • Connector lines: #C2C8CC, 1px
+  • Active node: Navy fill, white text
+
+PYRAMID / HIERARCHY
+  • Tiers top→bottom: Navy → Blue → Sky
+  • Text: white for dark tiers, Navy for light tiers
+  • No outlines; flat fills only
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TABLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+STRUCTURE
+  • Header row: Navy #0A2F5C background, white text, ALL CAPS, 11px semibold
+  • Alternate rows: White #FFFFFF / Mist #F0F4F8
+  • No vertical borders between data cells
+  • Outer border: none; bottom border of header: 2px Navy
+  • Row dividers: 1px #C2C8CC (horizontal only)
+
+ALIGNMENT
+  • Text columns: left-aligned
+  • Number columns: right-aligned (tabular figures)
+  • Header text: matches column alignment
+  • Units in header, not per cell — e.g. REVENUE ($M) not $1.2M per cell
+
+EMPHASIS
+  • Bold row for subtotals / section totals
+  • Highlight cell: Teal #00838F background + white text (use sparingly)
+  • Negative numbers: Coral #C0392B, no brackets — use minus sign
+  • Variance bars in cells: Teal positive / Coral negative, max 80% cell width
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DASHBOARDS & LAYOUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+GRID
+  • 12-column grid; gutters 16px; outer margin 24px
+  • Card padding: 20px
+  • Section spacing: 32px between major blocks
+
+CARDS / KPI TILES
+  • Background: white, border-radius 8px, shadow 0 1px 4px rgba(0,0,0,0.08)
+  • KPI value: Bold 700, 28–36px, Navy
+  • KPI label: Regular, 12px, Slate
+  • Delta/variance: inline 12px — #2E7D5B positive, #B5462F negative, prefixed ▲/▼
+  • Trend sparkline (optional): Sky #5B9BD5, no axes, 2px line
+
+PAGE BACKGROUND
+  • Light mode: #F6F8FB (portal) / #F0F4F8 (infographic exports)
+  • Cards: #FFFFFF
+  • Never use a coloured full-page background
+
+NAVIGATION / SIDEBAR
+  • Background: Navy #0A2F5C
+  • Text: White, 14px semibold
+  • Active item: #EEF3F9 background with Navy text
+
+ICONS (Lucide)
+  • Style: outline, 2px stroke, rounded caps/joins
+  • Colour: Slate for UI, Navy for emphasis
+  • Size: 16px inline, 24px standalone
+  • No mixed filled + outline icons in the same view
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DO / DON'T
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  DO                                    DON'T
+  Left-align chart titles               Centre chart titles
+  Sentence case for labels              Title case or ALL CAPS for body text
+  Show the number on the bar            Make users read from the axis
+  Use one accent colour per visual      Use rainbow palettes
+  Tabular-nums for all figures          Proportional figures in data tables
+  Show "—" for missing data             Show $0 or 0% when data is absent
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EMPTY STATES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  • Never show computed numbers derived from empty input
+  • Zero ($0) ≠ missing (—) — different display treatment
+  • Empty list → show illustration + descriptive prompt, not an error
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CSS VARIABLE QUICK-REFERENCE (portal)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  --brand-navy:           #0A2F5C   nav, headings, primary bars
+  --brand-primary:        #2A6FB0   buttons, links, data series 1
+  --brand-accent:         #1B9DD9   hover, accent borders
+  --brand-ink:            #0F1F33   body text
+  --brand-text-secondary: #5A6472   captions, muted
+  --brand-border:         #E3E8EE   dividers, gridlines
+  --brand-page-bg:        #F6F8FB   page background
+  --brand-tint:           #EEF3F9   hover bg, active row
+  --variance-fav:         #2E7D5B   positive variance, completed
+  --variance-adv:         #B5462F   negative variance, blocked
+  --status-inprogress:    #2A6FB0
+  --status-notstarted:    #9AA4B0

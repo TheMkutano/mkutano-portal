@@ -1,0 +1,1 @@
+artifacts/portal/public/mkutano-portal.zip filter=lfs diff=lfs merge=lfs -text
